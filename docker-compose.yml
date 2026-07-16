@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: collabspace-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: collabspace
+      POSTGRES_PASSWORD: collabspacepassword
+      POSTGRES_DB: collabspacedb
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collabspace -d collabspacedb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: collabspace-web
+    restart: always
+    ports:
+      - '3000:3000'
+      - '3001:3001'
+    environment:
+      - DATABASE_URL=postgresql://collabspace:collabspacepassword@postgres:5432/collabspacedb?schema=public
+      - JWT_SECRET=collabspace_super_secret_session_token_key_for_jwt_auth_12345
+      - NEXT_PUBLIC_WS_URL=ws://localhost:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

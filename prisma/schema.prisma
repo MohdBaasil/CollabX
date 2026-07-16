@@ -1,0 +1,257 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id             String            @id @default(uuid())
+  email          String            @unique
+  name           String?
+  passwordHash   String?
+  avatarUrl      String?
+  emailVerified  Boolean           @default(false)
+  theme          String            @default("dark")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  sessions       Session[]
+  accounts       Account[]
+  workspaces     WorkspaceMember[]
+  projectMembers ProjectMember[]
+  favorites      FavoriteProject[]
+  comments       Comment[]
+  activityLogs   ActivityLog[]
+  chatMessages   ChatMessage[]
+  projectFiles   ProjectFile[]
+  fileVersions   FileVersion[]
+  fileDownloads  FileDownload[]
+}
+
+model Account {
+  id                String   @id @default(uuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([email, token])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([email, token])
+}
+
+model Workspace {
+  id        String            @id @default(uuid())
+  name      String
+  slug      String            @unique
+  createdAt DateTime          @default(now())
+  members   WorkspaceMember[]
+  projects  Project[]
+}
+
+model WorkspaceMember {
+  id          String    @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String    @default("member")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Project {
+  id           String            @id @default(uuid())
+  name         String
+  description  String?
+  status       String            @default("todo") // backlog, todo, in_progress, done, archived
+  workspaceId  String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members      ProjectMember[]
+  tasks        Task[]
+  favorites    FavoriteProject[]
+  activityLogs ActivityLog[]
+  chatMessages ChatMessage[]
+  folders      Folder[]
+  projectFiles ProjectFile[]
+}
+
+model ProjectMember {
+  id        String   @id @default(uuid())
+  projectId String
+  userId    String
+  role      String   @default("editor") // owner, admin, editor, viewer
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+model FavoriteProject {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+}
+
+model Task {
+  id           String           @id @default(uuid())
+  title        String
+  description  String?
+  priority     String           @default("medium") // low, medium, high, urgent
+  status       String           @default("todo") // backlog, todo, in_progress, done, cancelled
+  dueDate      DateTime?
+  labels       String           @default("[]") // JSON string of label objects: [{name, color}]
+  tags         String           @default("[]") // JSON string of tags: ["bug", "ui"]
+  checklist    String           @default("[]") // JSON string of checklist: [{id, title, completed}]
+  attachments  String           @default("[]") // JSON string of attachments: [{name, url}]
+  timeEstimate Int?             // in hours
+  projectId    String
+  parentTaskId String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentTask   Task?            @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: Cascade)
+  subtasks     Task[]           @relation("Subtasks")
+  comments     Comment[]
+  blockedBy    TaskDependency[] @relation("BlockedTask")
+  blocking     TaskDependency[] @relation("BlockingTask")
+  activityLogs ActivityLog[]
+}
+
+model TaskDependency {
+  id             String @id @default(uuid())
+  blockedTaskId  String
+  blockingTaskId String
+  blockedTask    Task   @relation("BlockedTask", fields: [blockedTaskId], references: [id], onDelete: Cascade)
+  blockingTask   Task   @relation("BlockingTask", fields: [blockingTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([blockedTaskId, blockingTaskId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  text      String
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  projectId String
+  taskId    String?
+  userId    String
+  action    String   // create, update, delete, restore, comment
+  fieldName String?  // e.g. title, description, status, priority, etc.
+  oldValue  String?
+  newValue  String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model ChatMessage {
+  id              String        @id @default(uuid())
+  projectId       String
+  userId          String
+  text            String
+  attachments     String        @default("[]") // JSON string of [{name, url, size}]
+  reactions       String        @default("[]") // JSON string of [{emoji, userIds: []}]
+  readBy          String        @default("[]") // JSON string of ["userId"]
+  parentMessageId String?
+  createdAt       DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentMessage   ChatMessage?  @relation("ThreadReplies", fields: [parentMessageId], references: [id], onDelete: Cascade)
+  replies         ChatMessage[] @relation("ThreadReplies")
+}
+
+model Folder {
+  id        String        @id @default(uuid())
+  name      String
+  projectId String
+  createdAt DateTime      @default(now())
+  project   Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  files     ProjectFile[]
+}
+
+model ProjectFile {
+  id             String         @id @default(uuid())
+  name           String
+  projectId      String
+  folderId       String?
+  userId         String
+  currentVersion Int            @default(1)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder         Folder?        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions       FileVersion[]
+  downloads      FileDownload[]
+}
+
+model FileVersion {
+  id          String      @id @default(uuid())
+  fileId      String
+  version     Int
+  url         String
+  size        Int
+  mimeType    String
+  uploadedBy  String
+  createdAt   DateTime    @default(now())
+  file        ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+}
+
+model FileDownload {
+  id        String      @id @default(uuid())
+  fileId    String
+  userId    String
+  version   Int
+  createdAt DateTime    @default(now())
+  file      ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
