@@ -159,6 +159,7 @@ export function RealtimeProvider({ children, projectId }: { children: React.Reac
     }
 
     setConnectionStatus('connecting');
+    const token = getCookieToken();
     const baseWsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3001';
     const wsUrl = `${baseWsUrl}?projectId=${projectId}&token=${token}`;
 

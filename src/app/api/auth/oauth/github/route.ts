@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { origin } = new URL(request.url);
   const clientId = process.env.GITHUB_CLIENT_ID;
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/oauth/callback?provider=github`;
+  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || origin}/api/auth/oauth/callback?provider=github`;
 
   if (!clientId) {
     // If credentials are not configured, redirect to developer mock page
     return NextResponse.redirect(
-      new URL('/oauth-mock?provider=github', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+      new URL('/oauth-mock?provider=github', origin)
     );
   }
 

@@ -4,7 +4,7 @@ import { signToken } from '@/lib/jwt';
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
+    const { origin, searchParams } = new URL(request.url);
     const provider = searchParams.get('provider');
     const code = searchParams.get('code');
     const mock = searchParams.get('mock');
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
             client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
             code,
             grant_type: 'authorization_code',
-            redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/oauth/callback?provider=google`,
+            redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || origin}/api/auth/oauth/callback?provider=google`,
           }),
         });
 
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
             client_id: process.env.GITHUB_CLIENT_ID || '',
             client_secret: process.env.GITHUB_CLIENT_SECRET || '',
             code,
-            redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/oauth/callback?provider=github`,
+            redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || origin}/api/auth/oauth/callback?provider=github`,
           }),
         });
 
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
 
     // Redirect user to dashboard setting cookie
     const response = NextResponse.redirect(
-      new URL('/dashboard', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+      new URL('/dashboard', process.env.NEXT_PUBLIC_APP_URL || origin)
     );
 
     response.cookies.set({
@@ -169,7 +169,7 @@ export async function GET(request: Request) {
   } catch (error: any) {
     console.error('OAuth Callback error:', error);
     // Redirect user back to login with error details
-    const loginUrl = new URL('/login', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    const loginUrl = new URL('/login', process.env.NEXT_PUBLIC_APP_URL || origin);
     loginUrl.searchParams.set('error', error.message || 'OAuth exchange failed');
     return NextResponse.redirect(loginUrl);
   }
