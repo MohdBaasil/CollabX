@@ -81,8 +81,8 @@ function ProjectWorkspaceContent() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Tab View State: 'board' | 'list' | 'calendar' | 'timeline' | 'chat' | 'files' | 'analytics'
-  const [viewTab, setViewTab] = useState<'board' | 'list' | 'calendar' | 'timeline' | 'chat' | 'files' | 'analytics'>('board');
+  // Tab View State: 'overview' | 'board' | 'list' | 'calendar' | 'timeline' | 'files' | 'chat' | 'analytics' | 'settings'
+  const [viewTab, setViewTab] = useState<'overview' | 'board' | 'list' | 'calendar' | 'timeline' | 'files' | 'chat' | 'analytics' | 'settings'>('overview');
 
   // Search & Filters (List view)
   const [listSearch, setListSearch] = useState('');
@@ -114,8 +114,7 @@ function ProjectWorkspaceContent() {
   // Subtask creation state
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
 
-  // Project Settings Modal
-  const [isEditProjectOpen, setIsEditProjectOpen] = useState(false);
+  // Project Settings Modal (now in Settings Tab)
   const [projName, setProjName] = useState('');
   const [projDesc, setProjDesc] = useState('');
 
@@ -149,10 +148,10 @@ function ProjectWorkspaceContent() {
   const [aiSummary, setAiSummary] = useState<string | null>(null);
   const [isAiSummaryOpen, setIsAiSummaryOpen] = useState(false);
 
-  // --- AI ASSISTANT COPROCESSOR STATES ---
+  // --- AI ASSISTANT COPROCESSOR STATES (Now Floating Panel) ---
   const [isAiCoprocessorOpen, setIsAiCoprocessorOpen] = useState(false);
   const [aiMessages, setAiMessages] = useState<{ sender: 'user' | 'ai'; text: string; actionPayload?: any }[]>([
-    { sender: 'ai', text: '### ✨ CollabSpace AI Coprocessor\n\nI understand this project context completely. How can I help you today?' }
+    { sender: 'ai', text: '### ✨ CollabSpace AI Assistant\n\nI understand this project context completely. Choose a shortcut or type a question below!' }
   ]);
   const [aiInputText, setAiInputText] = useState('');
   const [isAiResponding, setIsAiResponding] = useState(false);
@@ -161,7 +160,7 @@ function ProjectWorkspaceContent() {
   const [folders, setFolders] = useState<any[]>([]);
   const [files, setFiles] = useState<any[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<any[]>([]); // breadcrumbs logs
+  const [folderPath, setFolderPath] = useState<any[]>([]); 
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [isFileDrawerOpen, setIsFileDrawerOpen] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -176,13 +175,14 @@ function ProjectWorkspaceContent() {
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<{ index: number; type: 'ideal' | 'actual'; x: number; y: number; val: number } | null>(null);
 
-  // --- PRODUCTION PREP STUFF ---
+  // --- PRODUCTION STATE ---
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
   const [isOnline, setIsOnline] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const aiChatEndRef = useRef<HTMLDivElement>(null);
 
   const fetchProjectDetails = async () => {
     try {
@@ -293,10 +293,11 @@ function ProjectWorkspaceContent() {
     }
   };
 
-  // Scroll to bottom helper
-  const scrollToBottom = (isThread = false) => {
-    if (isThread) {
+  const scrollToBottom = (type: 'chat' | 'thread' | 'ai' = 'chat') => {
+    if (type === 'thread') {
       threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if (type === 'ai') {
+      aiChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     } else {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
@@ -304,15 +305,21 @@ function ProjectWorkspaceContent() {
 
   useEffect(() => {
     if (viewTab === 'chat') {
-      scrollToBottom();
+      scrollToBottom('chat');
     }
   }, [viewTab, chatMessages]);
 
   useEffect(() => {
     if (isThreadDrawerOpen) {
-      setTimeout(() => scrollToBottom(true), 100);
+      setTimeout(() => scrollToBottom('thread'), 100);
     }
   }, [isThreadDrawerOpen, selectedParentMessage]);
+
+  useEffect(() => {
+    if (isAiCoprocessorOpen) {
+      setTimeout(() => scrollToBottom('ai'), 100);
+    }
+  }, [isAiCoprocessorOpen, aiMessages]);
 
   useEffect(() => {
     if (viewTab === 'files' || projectId) {
@@ -321,10 +328,26 @@ function ProjectWorkspaceContent() {
   }, [currentFolderId, projectId, viewTab]);
 
   useEffect(() => {
-    if (viewTab === 'analytics') {
+    if (viewTab === 'analytics' || viewTab === 'overview') {
       fetchAnalyticsData();
     }
   }, [viewTab, projectId]);
+
+  // Listen to Sidebar navigation tab switch events
+  useEffect(() => {
+    const handleSetTabEvent = (e: Event) => {
+      const tabName = (e as CustomEvent).detail;
+      if (tabName === 'coprocessor') {
+        setIsAiCoprocessorOpen(true);
+      } else if (['overview', 'board', 'list', 'calendar', 'timeline', 'files', 'chat', 'analytics', 'settings'].includes(tabName)) {
+        setViewTab(tabName as any);
+      }
+    };
+    window.addEventListener('collabspace-set-tab', handleSetTabEvent);
+    return () => {
+      window.removeEventListener('collabspace-set-tab', handleSetTabEvent);
+    };
+  }, []);
 
   // Offline support caching loader
   useEffect(() => {
@@ -368,7 +391,8 @@ function ProjectWorkspaceContent() {
         setIsCommandPaletteOpen(false);
         setIsDrawerOpen(false);
         setIsFileDrawerOpen(false);
-        setIsEditProjectOpen(false);
+        setIsThreadDrawerOpen(false);
+        setIsAiCoprocessorOpen(false);
         setIsAiSummaryOpen(false);
         if (selectedTask) {
           triggerEditing(selectedTask.id, false);
@@ -414,7 +438,7 @@ function ProjectWorkspaceContent() {
       fetchProjectLogs();
       fetchFilesAndFolders();
 
-      if (viewTab === 'analytics') {
+      if (viewTab === 'analytics' || viewTab === 'overview') {
         fetchAnalyticsData();
       }
 
@@ -586,7 +610,6 @@ function ProjectWorkspaceContent() {
       });
       if (res.ok) {
         addToast('Project details updated', 'success');
-        setIsEditProjectOpen(false);
         fetchProjectDetails();
         window.dispatchEvent(new Event('collabspace-projects-updated'));
 
@@ -1060,7 +1083,7 @@ function ProjectWorkspaceContent() {
         await fetchChats();
         sendChatMessage(data);
         
-        setTimeout(() => scrollToBottom(!!parentId), 100);
+        setTimeout(() => scrollToBottom(parentId ? 'thread' : 'chat'), 100);
       }
     } catch (e) {
       addToast('Failed to post message', 'error');
@@ -1305,7 +1328,6 @@ function ProjectWorkspaceContent() {
     }
   };
 
-  // Mentions parser
   const renderMessageContent = (text: string) => {
     const parts = text.split(/(@[a-zA-Z0-9_\-\.]+)/g);
     return parts.map((part, idx) => {
@@ -1326,7 +1348,7 @@ function ProjectWorkspaceContent() {
           .spinner {
             width: 32px;
             height: 32px;
-            border: 3px solid rgba(99, 102, 241, 0.2);
+            border: 3px solid rgba(79, 70, 229, 0.2);
             border-radius: 50%;
             border-top-color: var(--primary);
             animation: spin 0.8s linear infinite;
@@ -1391,11 +1413,11 @@ function ProjectWorkspaceContent() {
     { name: '📅 Go to Calendar Planner', action: () => setViewTab('calendar') },
     { name: '⏱️ Go to Activity Timeline', action: () => setViewTab('timeline') },
     { name: '💬 Go to Team Chat', action: () => setViewTab('chat') },
-    { name: '📁 Go to Files & Assets', action: () => setViewTab('files') },
+    { name: '📂 Go to Files & Assets', action: () => setViewTab('files') },
     { name: '📊 Go to Analytics Dashboard', action: () => setViewTab('analytics') },
-    { name: '✨ Ask AI Coprocessor', action: () => setIsAiCoprocessorOpen(true) },
+    { name: '✨ Ask AI Assistant', action: () => setIsAiCoprocessorOpen(true) },
     { name: '★ Star / Favorite Project', action: handleToggleFavorite },
-    { name: '⚙️ Open Project Settings', action: () => setIsEditProjectOpen(true) },
+    { name: '⚙️ Open Project Settings', action: () => setViewTab('settings') },
     { name: '🌓 Toggle Dark / Light Theme', action: toggleTheme },
     { name: '➕ Create New Task', action: () => {
       const name = prompt('Create Task:');
@@ -1421,16 +1443,11 @@ function ProjectWorkspaceContent() {
       <header className="workspace-header glass">
         <div className="header-top">
           <div className="project-title-info">
-            <span className="folder-icon" aria-hidden="true">📂</span>
+            <span className="folder-icon" aria-hidden="true">📁</span>
             <div>
               <h2>{project.name}</h2>
               <p className="description">{project.description || 'No project description added.'}</p>
             </div>
-            {!isViewer && (
-              <button className="btn-settings-edit" onClick={() => setIsEditProjectOpen(true)} title="Edit Project Details">
-                ⚙️ Settings
-              </button>
-            )}
           </div>
 
           {/* Live presence avatars row */}
@@ -1461,46 +1478,44 @@ function ProjectWorkspaceContent() {
             >
               ★ {project.isFavorite ? 'Starred' : 'Star'}
             </button>
-
-            <button
-              className="btn-fav-star"
-              onClick={() => setIsAiCoprocessorOpen(true)}
-              style={{ background: 'linear-gradient(135deg, var(--primary) 0%, #818cf8 100%)', color: 'white', border: 'none' }}
-            >
-              ✨ Ask AI Coprocessor
-            </button>
           </div>
         </div>
 
-        {/* Views switcher tabs (extended with Chat, Files & Analytics) */}
+        {/* Views switcher tabs (spacious tab design) */}
         <div className="header-tabs-row">
           <div className="view-switcher-tabs" role="tablist">
+            <button className={`tab-btn ${viewTab === 'overview' ? 'active' : ''}`} onClick={() => setViewTab('overview')} role="tab" aria-selected={viewTab === 'overview'}>
+              ✨ Overview
+            </button>
             <button className={`tab-btn ${viewTab === 'board' ? 'active' : ''}`} onClick={() => setViewTab('board')} role="tab" aria-selected={viewTab === 'board'}>
-              📋 Kanban Board
+              📋 Board
             </button>
             <button className={`tab-btn ${viewTab === 'list' ? 'active' : ''}`} onClick={() => setViewTab('list')} role="tab" aria-selected={viewTab === 'list'}>
-              📝 List Grid
+              📝 List
             </button>
             <button className={`tab-btn ${viewTab === 'calendar' ? 'active' : ''}`} onClick={() => setViewTab('calendar')} role="tab" aria-selected={viewTab === 'calendar'}>
-              📅 Calendar Planner
+              📅 Calendar
             </button>
             <button className={`tab-btn ${viewTab === 'timeline' ? 'active' : ''}`} onClick={() => setViewTab('timeline')} role="tab" aria-selected={viewTab === 'timeline'}>
-              ⏱️ Activity Timeline
-            </button>
-            <button className={`tab-btn ${viewTab === 'chat' ? 'active' : ''}`} onClick={() => setViewTab('chat')} role="tab" aria-selected={viewTab === 'chat'}>
-              💬 Team Chat
+              ⏱️ Timeline
             </button>
             <button className={`tab-btn ${viewTab === 'files' ? 'active' : ''}`} onClick={() => setViewTab('files')} role="tab" aria-selected={viewTab === 'files'}>
-              📁 Files & Assets
+              📂 Files
+            </button>
+            <button className={`tab-btn ${viewTab === 'chat' ? 'active' : ''}`} onClick={() => setViewTab('chat')} role="tab" aria-selected={viewTab === 'chat'}>
+              💬 Chat
             </button>
             <button className={`tab-btn ${viewTab === 'analytics' ? 'active' : ''}`} onClick={() => setViewTab('analytics')} role="tab" aria-selected={viewTab === 'analytics'}>
-              📊 Analytics Dashboard
+              📊 Analytics
+            </button>
+            <button className={`tab-btn ${viewTab === 'settings' ? 'active' : ''}`} onClick={() => setViewTab('settings')} role="tab" aria-selected={viewTab === 'settings'}>
+              ⚙️ Settings
             </button>
           </div>
 
           <div className="project-completion-badge">
             <div className="progress-bar-container">
-              <span>Completion Progress ({project.progress}%)</span>
+              <span>Progress {project.progress}%</span>
               <div className="mini-progress-bg">
                 <div className="mini-progress-fill" style={{ width: `${project.progress}%` }}></div>
               </div>
@@ -1512,9 +1527,161 @@ function ProjectWorkspaceContent() {
       {/* Main Workspace content */}
       <div className="workspace-content">
         
-        {/* VIEW 1: KANBAN BOARD */}
+        {/* TAB 1: OVERVIEW TAB */}
+        {viewTab === 'overview' && (
+          <div className="overview-tab-layout animate-fade-in">
+            {isAnalyticsLoading || !analyticsData ? (
+              <div className="loading-container text-center">
+                <span className="spinner"></span>
+                <p>Retrieving project highlights summaries...</p>
+              </div>
+            ) : (
+              <div className="overview-grid">
+                
+                {/* 1. HEALTH SCORE RING & PROJECT DETAILS */}
+                <div className="overview-card health-score-widget glass">
+                  <span className="overview-card-label">PROJECT PROFILE</span>
+                  <div className="health-radial-box">
+                    <svg width="84" height="84" viewBox="0 0 120 120">
+                      <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" />
+                      <circle
+                        cx="60"
+                        cy="60"
+                        r="50"
+                        fill="none"
+                        stroke={analyticsData.projectHealth >= 80 ? 'var(--success)' : analyticsData.projectHealth >= 50 ? 'var(--warning)' : 'var(--error)'}
+                        strokeWidth="8"
+                        strokeDasharray="314"
+                        strokeDashoffset={314 - (314 * analyticsData.projectHealth) / 100}
+                        strokeLinecap="round"
+                        transform="rotate(-90 60 60)"
+                        style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
+                      />
+                      <text x="60" y="66" textAnchor="middle" fill="var(--fg-primary)" fontSize="22" fontWeight="800">
+                        {analyticsData.projectHealth}%
+                      </text>
+                    </svg>
+                    <div className="health-text-details">
+                      <h3>{project.name}</h3>
+                      <p>Health Index Status: <strong>{analyticsData.projectHealth >= 80 ? 'Emerald Good' : 'Gold Alert'}</strong></p>
+                    </div>
+                  </div>
+                  <div className="overview-mini-metrics">
+                    <div className="mini-metric">
+                      <span>Tasks Complete</span>
+                      <strong>{analyticsData.productivity.completed} / {analyticsData.productivity.total}</strong>
+                    </div>
+                    <div className="mini-metric">
+                      <span>In Progress</span>
+                      <strong>{analyticsData.productivity.inProgress}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. AI COPROCESSOR RECOMMENDATION SUMMARY */}
+                <div className="overview-card ai-summary-widget glass">
+                  <span className="overview-card-label">🧠 AI COPROCESSOR REPORT</span>
+                  <div className="ai-report-bullets">
+                    <ul>
+                      {analyticsData.aiInsights.slice(0, 2).map((ins: string, idx: number) => (
+                        <li key={idx}>💡 {ins}</li>
+                      ))}
+                      {analyticsData.aiRisks.slice(0, 2).map((risk: string, idx: number) => (
+                        <li key={idx} style={{ color: 'var(--error)' }}>⚠️ {risk}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <button className="btn-secondary" style={{ width: '100%', marginTop: 'auto' }} onClick={() => setIsAiCoprocessorOpen(true)}>
+                    🪄 Consulting Workspace Brain
+                  </button>
+                </div>
+
+                {/* 3. UPCOMING TASKS & TASK DELEGATION */}
+                <div className="overview-card glass">
+                  <span className="overview-card-label">📋 UPCOMING SPRINT TASKS</span>
+                  {tasks.filter((t) => t.status !== 'done').length === 0 ? (
+                    <p className="no-comments">All sprint tasks completed!</p>
+                  ) : (
+                    <div className="mini-list-preview">
+                      {tasks.filter((t) => t.status !== 'done').slice(0, 3).map((t) => (
+                        <div key={t.id} className="mini-list-item" onClick={() => {
+                          setSelectedTask(t);
+                          triggerEditing(t.id, true);
+                          setIsDrawerOpen(true);
+                        }}>
+                          <span className={`prio-dot ${t.priority}`}>●</span>
+                          <strong>{t.title}</strong>
+                          <span className="meta">{t.status.toUpperCase()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. RECENT AUDITS & TIMELINE FEED */}
+                <div className="overview-card glass">
+                  <span className="overview-card-label">⏱️ RECENT ACTIVITY RECORDS</span>
+                  {projectLogs.length === 0 ? (
+                    <p className="no-comments">No activity logs recorded.</p>
+                  ) : (
+                    <div className="mini-list-preview">
+                      {projectLogs.slice(0, 3).map((log) => (
+                        <div key={log.id} className="mini-list-item">
+                          <span>{log.user?.name || log.user?.email.split('@')[0]}</span>
+                          <strong>{log.action}d {log.fieldName || 'card'}</strong>
+                          <span className="meta">{new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. RECENT FILES ACCESS */}
+                <div className="overview-card glass">
+                  <span className="overview-card-label">📂 RECENT FILES</span>
+                  {files.length === 0 ? (
+                    <p className="no-comments">No documents uploaded.</p>
+                  ) : (
+                    <div className="mini-list-preview">
+                      {files.slice(0, 3).map((f) => (
+                        <div key={f.id} className="mini-list-item" onClick={() => setViewTab('files')}>
+                          <span>📄</span>
+                          <strong>{f.name}</strong>
+                          <span className="meta">v{f.currentVersion}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 6. PROJECT TEAM MEMBERS ROLES */}
+                <div className="overview-card glass">
+                  <span className="overview-card-label">👥 COLLABORATORS</span>
+                  <div className="members-profile-list">
+                    {project.members && project.members.map((member: any) => (
+                      <div key={member.id} className="member-profile-row">
+                        <img
+                          src={member.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(member.user?.name || member.user?.email)}`}
+                          alt="Avatar"
+                          className="member-profile-avatar"
+                        />
+                        <div className="member-profile-info">
+                          <strong>{member.user?.name || member.user?.email}</strong>
+                          <span>{member.role.toUpperCase()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* VIEW 2: KANBAN BOARD */}
         {viewTab === 'board' && (
-          <div className="kanban-board-layout">
+          <div className="kanban-board-layout animate-fade-in">
             {(['backlog', 'todo', 'in_progress', 'done', 'cancelled'] as const).map((colStatus) => {
               const colTasks = rootTasks.filter((t) => t.status === colStatus);
 
@@ -1543,7 +1710,7 @@ function ProjectWorkspaceContent() {
                     >
                       <input
                         type="text"
-                        placeholder="+ Add task..."
+                        placeholder="＋ Add task..."
                         value={quickTaskTitle[colStatus] || ''}
                         onChange={(e) => setQuickTaskTitle(prev => ({ ...prev, [colStatus]: e.target.value }))}
                       />
@@ -1552,7 +1719,7 @@ function ProjectWorkspaceContent() {
 
                   <div className="cards-stack">
                     {colTasks.length === 0 ? (
-                      <div className="column-empty">Drop tasks here</div>
+                      <div className="column-empty">No tasks yet.</div>
                     ) : (
                       colTasks.map((task) => {
                         const hasChecklist = task.checklist && task.checklist.length > 0;
@@ -1635,9 +1802,9 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 2: LIST VIEW */}
+        {/* VIEW 3: LIST VIEW */}
         {viewTab === 'list' && (
-          <div className="list-view-layout glass">
+          <div className="list-view-layout glass animate-fade-in">
             <div className="list-toolbar">
               <input
                 type="text"
@@ -1665,7 +1832,7 @@ function ProjectWorkspaceContent() {
                 }}
                 disabled={isViewer}
               >
-                + Add Task
+                ＋ Add Task
               </button>
             </div>
 
@@ -1684,7 +1851,7 @@ function ProjectWorkspaceContent() {
                 <tbody>
                   {filteredListTasks.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="text-center no-tasks">No tasks match your filters.</td>
+                      <td colSpan={6} className="text-center no-tasks">No tasks found.</td>
                     </tr>
                   ) : (
                     filteredListTasks.map((t) => (
@@ -1733,9 +1900,9 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 3: CALENDAR VIEW */}
+        {/* VIEW 4: CALENDAR VIEW */}
         {viewTab === 'calendar' && (
-          <div className="calendar-view-layout glass">
+          <div className="calendar-view-layout glass animate-fade-in">
             <div className="calendar-toolbar">
               <button className="btn-arrow" onClick={handlePrevMonth}>◀</button>
               <h2>
@@ -1782,9 +1949,9 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 4: ACTIVITY TIMELINE */}
+        {/* VIEW 5: ACTIVITY TIMELINE */}
         {viewTab === 'timeline' && (
-          <div className="timeline-layout glass">
+          <div className="timeline-layout glass animate-fade-in">
             <div className="timeline-toolbar">
               <input
                 type="text"
@@ -1821,7 +1988,7 @@ function ProjectWorkspaceContent() {
 
             <div className="timeline-timeline-feed">
               {filteredTimelineLogs.length === 0 ? (
-                <div className="timeline-empty">No activity records match filters.</div>
+                <div className="timeline-empty">No activity records found.</div>
               ) : (
                 filteredTimelineLogs.map((log) => {
                   const avatar = log.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(log.user?.name || log.user?.email || 'U')}`;
@@ -1868,7 +2035,7 @@ function ProjectWorkspaceContent() {
                         {(isDescriptionUpdate || isTitleUpdate) && (
                           <div className="timeline-card-actions">
                             <button className="btn-compare" onClick={() => setCompareLog(log)}>
-                              🔎 Word-level Difference
+                              🔎 Difference Details
                             </button>
                             {!isViewer && log.userId === user?.id && (
                               <button className="btn-restore-link" onClick={() => handleRestoreVersion(log.id)}>
@@ -1886,25 +2053,23 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 5: REAL-TIME TEAM CHAT WORKSPACE */}
+        {/* VIEW 6: REAL-TIME TEAM CHAT WORKSPACE */}
         {viewTab === 'chat' && (
           <div className="chat-layout glass animate-fade-in">
             <div className="chat-toolbar">
-              <span className="chat-heading">💬 Project Team Chat Channel</span>
-              <button className="btn-ai-summary" onClick={handleGenerateSummary} title="Compile Chat executive summary">
-                🪄 Generate AI Chat Summary
+              <span className="chat-heading">💬 Channel Stream</span>
+              <button className="btn-ai-summary font-semibold" onClick={handleGenerateSummary} title="Compile Chat executive summary">
+                🪄 AI Chat Summary
               </button>
             </div>
 
             {/* Chat message stream container */}
             <div className="chat-message-stream">
               {chatMessages.length === 0 ? (
-                <div className="chat-empty text-center">No messages posted in Acme Team Channel. Say hello!</div>
+                <div className="chat-empty text-center">No messages posted in team channel. Say hello!</div>
               ) : (
                 chatMessages.map((msg) => {
                   const avatar = msg.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.user?.name || msg.user?.email || 'U')}`;
-                  
-                  // Read receipts checks
                   const readCount = msg.readBy ? msg.readBy.length : 0;
 
                   return (
@@ -2018,7 +2183,7 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 6: FILE COLLABORATION AND DOCUMENT CENTER */}
+        {/* VIEW 7: FILE COLLABORATION AND DOCUMENT CENTER */}
         {viewTab === 'files' && (
           <div className="files-layout glass animate-fade-in">
             {/* Folder Navigation bar */}
@@ -2027,7 +2192,7 @@ function ProjectWorkspaceContent() {
                 <span className="crumb-root" onClick={() => {
                   setCurrentFolderId(null);
                   setFolderPath([]);
-                }}>📁 Root Folder</span>
+                }}>📁 Root</span>
                 {folderPath.map((pathItem, idx) => (
                   <span key={pathItem.id} className="crumb-item" onClick={() => {
                     setCurrentFolderId(pathItem.id);
@@ -2068,17 +2233,16 @@ function ProjectWorkspaceContent() {
             >
               <div className="dnd-prompt">
                 <span className="dnd-icon">🗂️</span>
-                <p>Drag and drop assets here, or click upload to simulate.</p>
+                <p>Drag and drop assets here, or click upload buttons to simulate.</p>
               </div>
             </div>
 
             {/* Folder and File grid list */}
             <div className="files-grid-container">
               {folders.length === 0 && files.length === 0 ? (
-                <div className="files-empty text-center">No documents in this directory directory. Upload specs!</div>
+                <div className="files-empty text-center">No documents in this directory yet.</div>
               ) : (
                 <div className="folders-files-grid">
-                  {/* Folders first */}
                   {folders.map((folder) => (
                     <div
                       key={folder.id}
@@ -2090,11 +2254,10 @@ function ProjectWorkspaceContent() {
                     >
                       <span className="grid-icon">📁</span>
                       <strong className="item-name">{folder.name}</strong>
-                      <span className="item-meta">Directory Folder</span>
+                      <span className="item-meta">Folder</span>
                     </div>
                   ))}
 
-                  {/* Files */}
                   {files.map((file) => {
                     const isImg = file.name.toLowerCase().match(/\.(png|jpg|jpeg|webp)$/);
                     const isPdf = file.name.toLowerCase().endsWith('.pdf');
@@ -2114,7 +2277,7 @@ function ProjectWorkspaceContent() {
                       >
                         <span className="grid-icon">{icon}</span>
                         <strong className="item-name">{file.name}</strong>
-                        <span className="item-meta">v{file.currentVersion} • Uploader Admin</span>
+                        <span className="item-meta">v{file.currentVersion} • Spec</span>
                       </div>
                     );
                   })}
@@ -2124,22 +2287,22 @@ function ProjectWorkspaceContent() {
           </div>
         )}
 
-        {/* VIEW 7: ANALYTICS DASHBOARD */}
+        {/* VIEW 8: ANALYTICS DASHBOARD */}
         {viewTab === 'analytics' && (
           <div className="analytics-layout animate-fade-in">
             {isAnalyticsLoading || !analyticsData ? (
               <div className="loading-container text-center">
                 <span className="spinner"></span>
-                <p>Computing interactive analytics data models...</p>
+                <p>Computing interactive analytics metrics...</p>
               </div>
             ) : (
               <div className="analytics-dashboard-grid">
                 
                 {/* 1. HEALTH SCORE CIRCULAR GAUGE & PRODUCTIVITY STATS */}
                 <div className="analytics-card kpi-column glass">
-                  <span className="section-label">Project Performance</span>
+                  <span className="section-label">Performance Gauge</span>
                   <div className="health-circle-wrapper">
-                    <svg width="120" height="120" viewBox="0 0 120 120">
+                    <svg width="100" height="100" viewBox="0 0 120 120">
                       <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" />
                       <circle
                         cx="60"
@@ -2154,12 +2317,12 @@ function ProjectWorkspaceContent() {
                         transform="rotate(-90 60 60)"
                         style={{ transition: 'stroke-dashoffset 0.8s ease-out' }}
                       />
-                      <text x="60" y="65" textAnchor="middle" fill="var(--fg-primary)" fontSize="20" fontWeight="800">
+                      <text x="60" y="66" textAnchor="middle" fill="var(--fg-primary)" fontSize="22" fontWeight="800">
                         {analyticsData.projectHealth}%
                       </text>
                     </svg>
                     <div className="health-label-under">
-                      <strong>Project Health Score</strong>
+                      <strong>Project Health</strong>
                       <span className="health-desc">
                         {analyticsData.projectHealth >= 80 ? '🟢 Highly Productive' : analyticsData.projectHealth >= 50 ? '🟡 At Risk / Impeded' : '🔴 Critical Blockage'}
                       </span>
@@ -2172,16 +2335,8 @@ function ProjectWorkspaceContent() {
                       <strong>{analyticsData.productivity.completed} / {analyticsData.productivity.total}</strong>
                     </div>
                     <div className="mini-stat-card">
-                      <span className="stat-label">Active Sprints</span>
-                      <strong>Sprint 4</strong>
-                    </div>
-                    <div className="mini-stat-card">
-                      <span className="stat-label">Urgent Cards</span>
+                      <span className="stat-label">Urgent</span>
                       <strong className="text-red">{analyticsData.productivity.priorities.urgent}</strong>
-                    </div>
-                    <div className="mini-stat-card">
-                      <span className="stat-label">In Progress</span>
-                      <strong className="text-green">{analyticsData.productivity.inProgress}</strong>
                     </div>
                   </div>
                 </div>
@@ -2198,7 +2353,7 @@ function ProjectWorkspaceContent() {
                     </ul>
                   </div>
 
-                  <div className="ai-report-box alert-box" style={{ marginTop: '16px' }}>
+                  <div className="ai-report-box alert-box" style={{ marginTop: '10px' }}>
                     <h3>⚠️ AI Threat & Risks Log</h3>
                     <ul>
                       {analyticsData.aiRisks.map((risk: string, idx: number) => (
@@ -2210,10 +2365,9 @@ function ProjectWorkspaceContent() {
 
                 {/* 3. BURNDOWN LINE CHART */}
                 <div className="analytics-card burndown-column glass">
-                  <span className="section-label">Burndown Chart (Ideal vs Remaining)</span>
+                  <span className="section-label">Burndown Chart</span>
                   <div className="chart-container" style={{ position: 'relative' }}>
                     <svg viewBox="0 0 500 220" width="100%" height="220" style={{ overflow: 'visible' }}>
-                      {/* Grid guidelines */}
                       {[0, 50, 100, 150, 200].map((y, idx) => (
                         <line key={idx} x1="30" y1={y + 10} x2="480" y2={y + 10} stroke="var(--border-color)" strokeWidth="0.5" strokeDasharray="3,3" />
                       ))}
@@ -2263,13 +2417,8 @@ function ProjectWorkspaceContent() {
                           />
                         );
                       })}
-
-                      {/* Labels */}
-                      <text x="15" y="15" fill="var(--fg-tertiary)" fontSize="9" fontWeight="700">Tasks</text>
-                      <text x="475" y="218" fill="var(--fg-tertiary)" fontSize="9" fontWeight="700" textAnchor="end">Days</text>
                     </svg>
 
-                    {/* Chart tooltip popup */}
                     {hoveredPoint && (
                       <div className="chart-tooltip" style={{ left: `${(hoveredPoint.x / 500) * 100}%`, top: `${(hoveredPoint.y / 220) * 100 - 15}%` }}>
                         Day {hoveredPoint.index}: <strong>{hoveredPoint.val}</strong> tasks remaining
@@ -2284,15 +2433,13 @@ function ProjectWorkspaceContent() {
 
                 {/* 4. VELOCITY VERTICAL BAR CHART */}
                 <div className="analytics-card velocity-column glass">
-                  <span className="section-label">Team Velocity (Story Points)</span>
+                  <span className="section-label">Team Velocity</span>
                   <div className="chart-container">
                     <svg viewBox="0 0 400 200" width="100%" height="200" style={{ overflow: 'visible' }}>
-                      {/* Grid guidelines */}
                       {[0, 50, 100, 150].map((y, idx) => (
                         <line key={idx} x1="30" y1={y + 20} x2="380" y2={y + 20} stroke="var(--border-color)" strokeWidth="0.5" />
                       ))}
 
-                      {/* Velocity bars */}
                       {analyticsData.velocity.map((v: any, idx: number) => {
                         const x = 50 + (idx * 85);
                         const h = v.points * 4.5;
@@ -2303,15 +2450,15 @@ function ProjectWorkspaceContent() {
                             <rect
                               x={x}
                               y={y}
-                              width="36"
+                              width="32"
                               height={h}
                               rx="3"
                               style={{ fill: 'var(--primary)', cursor: 'pointer' }}
                             />
-                            <text x={x + 18} y={y - 6} textAnchor="middle" fill="var(--fg-primary)" fontSize="10" fontWeight="700">
+                            <text x={x + 16} y={y - 6} textAnchor="middle" fill="var(--fg-primary)" fontSize="9" fontWeight="700">
                               {v.points} pts
                             </text>
-                            <text x={x + 18} y="185" textAnchor="middle" fill="var(--fg-tertiary)" fontSize="10" fontWeight="600">
+                            <text x={x + 16} y="185" textAnchor="middle" fill="var(--fg-tertiary)" fontSize="9" fontWeight="600">
                               {v.sprint}
                             </text>
                           </g>
@@ -2323,7 +2470,7 @@ function ProjectWorkspaceContent() {
 
                 {/* 5. TEAM WORKLOAD */}
                 <div className="analytics-card workload-column glass">
-                  <span className="section-label">Team Workload Distribution</span>
+                  <span className="section-label">Workload Distribution</span>
                   <div className="workload-list">
                     {analyticsData.teamWorkload.map((member: any) => (
                       <div key={member.userId} className="workload-row-bar">
@@ -2341,49 +2488,79 @@ function ProjectWorkspaceContent() {
 
                 {/* 6. CONTRUBUTORS ATTENDANCE HEATMAP */}
                 <div className="analytics-card attendance-column glass">
-                  <span className="section-label">Contributor Daily Check-in Frequency</span>
+                  <span className="section-label">Contribution Heatmap</span>
                   <div className="attendance-heatmap-row">
                     {analyticsData.attendance.map((day: any, idx: number) => {
                       let bg = 'var(--bg-tertiary)';
-                      if (day.count === 1) bg = 'rgba(16,185,129,0.2)';
-                      else if (day.count === 2) bg = 'rgba(16,185,129,0.4)';
-                      else if (day.count === 3) bg = 'rgba(16,185,129,0.7)';
-                      else if (day.count >= 4) bg = 'rgba(16,185,129,1.0)';
+                      if (day.count === 1) bg = 'rgba(34,197,94,0.2)';
+                      else if (day.count === 2) bg = 'rgba(34,197,94,0.4)';
+                      else if (day.count === 3) bg = 'rgba(34,197,94,0.7)';
+                      else if (day.count >= 4) bg = 'rgba(34,197,94,1.0)';
 
                       return (
-                        <div key={idx} className="heatmap-box" style={{ background: bg }} title={`${day.date}: ${day.count} check-ins`}>
+                        <div key={idx} className="heatmap-box" style={{ background: bg }} title={`${day.date}: ${day.count} updates`}>
                           <span className="heatmap-date-label">{day.date.split(' ')[1]}</span>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="heatmap-legends-row">
-                    <span>Less</span>
-                    <span className="heatmap-legend-cell level-0"></span>
-                    <span className="heatmap-legend-cell level-1"></span>
-                    <span className="heatmap-legend-cell level-2"></span>
-                    <span className="heatmap-legend-cell level-3"></span>
-                    <span className="heatmap-legend-cell level-4"></span>
-                    <span>More</span>
-                  </div>
-                </div>
-
-                {/* 7. LEADERBOARD: MOST ACTIVE MEMBERS */}
-                <div className="analytics-card leaderboard-column glass">
-                  <span className="section-label">Most Active Contributors (Activity Counts)</span>
-                  <div className="leaderboard-stack">
-                    {analyticsData.mostActive.slice(0, 5).map((act: any, idx: number) => (
-                      <div key={idx} className="leaderboard-row">
-                        <span className="rank-badge">#{idx + 1}</span>
-                        <strong className="member-name">{act.userName}</strong>
-                        <span className="actions-count">{act.actionsCount} updates</span>
-                      </div>
-                    ))}
-                  </div>
                 </div>
 
               </div>
             )}
+          </div>
+        )}
+
+        {/* VIEW 9: PROJECT CONFIGURATION SETTINGS */}
+        {viewTab === 'settings' && (
+          <div className="project-settings-tab-layout animate-fade-in">
+            <div className="settings-wrapper glass">
+              <h2 className="section-title">⚙️ Workspace Settings</h2>
+              
+              <form onSubmit={handleProjectEditSubmit} className="settings-form">
+                <div className="input-group">
+                  <label>Project Name</label>
+                  <input
+                    type="text"
+                    value={projName}
+                    onChange={(e) => setProjName(e.target.value)}
+                    required
+                    disabled={isViewer}
+                  />
+                </div>
+
+                <div className="input-group" style={{ marginTop: '16px' }}>
+                  <label>Description</label>
+                  <textarea
+                    value={projDesc}
+                    onChange={(e) => setProjDesc(e.target.value)}
+                    rows={4}
+                    disabled={isViewer}
+                  />
+                </div>
+
+                {!isViewer && (
+                  <button type="submit" className="btn-primary" style={{ marginTop: '16px', alignSelf: 'flex-start' }}>
+                    Save Configuration
+                  </button>
+                )}
+              </form>
+
+              <div className="sidebar-divider" style={{ margin: '24px 0' }}></div>
+
+              <h2 className="section-title text-red">⚠️ Destructive Zone</h2>
+              <div className="settings-destructive-actions">
+                <button type="button" className="btn-action-dest duplicate" onClick={handleDuplicateProject} disabled={isViewer}>
+                  👥 Duplicate Project Copy
+                </button>
+                <button type="button" className="btn-action-dest archive" onClick={handleArchiveProject} disabled={isViewer}>
+                  📦 Move Project to Archive
+                </button>
+                <button type="button" className="btn-action-dest delete" onClick={handleDeleteProject} disabled={isViewer}>
+                  🗑️ Permanently Delete Project
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2400,7 +2577,7 @@ function ProjectWorkspaceContent() {
         >
           <div className="drawer-panel glass animate-slide-in-right" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
-              <span className="drawer-task-id">Workspace Task console</span>
+              <span className="drawer-task-id">Task Editor</span>
               <div className="drawer-header-actions">
                 {!isViewer && (
                   <button className="btn-action-delete" onClick={() => handleDeleteTask(selectedTask.id)} title="Delete Task">
@@ -2532,7 +2709,7 @@ function ProjectWorkspaceContent() {
                   </div>
 
                   <div className="drawer-section">
-                    <span className="section-label">Labels (Click to Add)</span>
+                    <span className="section-label">Labels</span>
                     <div className="labels-selector-row">
                       {[
                         { name: 'Bug', color: '#ef4444' },
@@ -2547,7 +2724,7 @@ function ProjectWorkspaceContent() {
                           className="tag-add-pill"
                           style={{ borderLeft: `4px solid ${l.color}` }}
                         >
-                          + {l.name}
+                          ＋ {l.name}
                         </button>
                       ))}
                     </div>
@@ -2568,34 +2745,10 @@ function ProjectWorkspaceContent() {
                         ))}
                       </div>
                     )}
-
-                    <span className="section-label" style={{ marginTop: '14px', display: 'block' }}>Tags</span>
-                    <form onSubmit={handleAddTag} className="tags-add-form">
-                      <input
-                        type="text"
-                        placeholder="Add tag and press Enter..."
-                        value={newTagInput}
-                        onChange={(e) => setNewTagInput(e.target.value)}
-                        disabled={isViewer || isEditingLocked}
-                      />
-                    </form>
-
-                    {selectedTask.tags && selectedTask.tags.length > 0 && (
-                      <div className="active-tags-row">
-                        {selectedTask.tags.map((t: string, idx: number) => (
-                          <span key={idx} className="tag-pill">
-                            #{t}
-                            {!(isViewer || isEditingLocked) && (
-                              <button className="btn-tag-remove" onClick={() => handleRemoveTag(t)}>✕</button>
-                            )}
-                          </span>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   <div className="drawer-section">
-                    <span className="section-label">Subtasks Workspace</span>
+                    <span className="section-label">Subtasks List</span>
                     <div className="subtasks-list">
                       {selectedTask.subtasks && selectedTask.subtasks.map((sub: any) => (
                         <div key={sub.id} className="subtask-row">
@@ -2626,7 +2779,7 @@ function ProjectWorkspaceContent() {
                       >
                         <input
                           type="text"
-                          placeholder="+ Add nested subtask..."
+                          placeholder="＋ Add subtask..."
                           value={newSubtaskTitle}
                           onChange={(e) => setNewSubtaskTitle(e.target.value)}
                         />
@@ -2667,7 +2820,7 @@ function ProjectWorkspaceContent() {
                   </div>
 
                   <div className="drawer-section">
-                    <span className="section-label">Task Dependencies</span>
+                    <span className="section-label">Dependencies</span>
                     
                     {!(isViewer || isEditingLocked) && (
                       <div className="dependency-add-controls">
@@ -2703,47 +2856,6 @@ function ProjectWorkspaceContent() {
                           ))}
                         </div>
                       )}
-
-                      {selectedTask.blocking && selectedTask.blocking.length > 0 && (
-                        <div className="dependency-group">
-                          <div className="dep-title text-green">⚡ Blocking:</div>
-                          {selectedTask.blocking.map((dep: any) => (
-                            <div key={dep.id} className="dep-item">
-                              <span>{dep.title}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="drawer-section">
-                    <span className="section-label">Attachments</span>
-                    <div className="attachments-list">
-                      {selectedTask.attachments && selectedTask.attachments.map((a: any, idx: number) => (
-                        <div key={idx} className="attachment-row">
-                          <span>📄 {a.name}</span>
-                          <a href={a.url} className="btn-download" target="_blank" rel="noreferrer">Download</a>
-                        </div>
-                      ))}
-                      
-                      {!(isViewer || isEditingLocked) && (
-                        <button
-                          className="btn-upload-mock"
-                          onClick={() => {
-                            const name = prompt('Simulate Attachment Name:');
-                            if (name) {
-                              const list = selectedTask.attachments || [];
-                              const updated = [...list, { name, url: '#' }];
-                              setSelectedTask((prev: any) => ({ ...prev, attachments: updated }));
-                              handleUpdateTaskField(selectedTask.id, { attachments: updated });
-                              addToast('Attachment uploaded successfully', 'success');
-                            }
-                          }}
-                        >
-                          + Add mock attachment
-                        </button>
-                      )}
                     </div>
                   </div>
                 </>
@@ -2751,11 +2863,11 @@ function ProjectWorkspaceContent() {
 
               {drawerSubTab === 'discussion' && (
                 <div className="drawer-section comments-section">
-                  <span className="section-label">Timeline Discussions</span>
+                  <span className="section-label">Discussion Feed</span>
 
                   <div className="comments-stack">
                     {(!selectedTask.comments || selectedTask.comments.length === 0) ? (
-                      <p className="no-comments">No discussion comments logged yet.</p>
+                      <p className="no-comments">No messages logged yet.</p>
                     ) : (
                       selectedTask.comments.map((c: any) => {
                         const avatar = c.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.user?.name || c.user?.email || 'U')}`;
@@ -2777,7 +2889,7 @@ function ProjectWorkspaceContent() {
 
                   {activeTypingUsers.length > 0 && (
                     <div className="typing-indicator animate-pulse">
-                      💬 {activeTypingUsers.join(', ')} {activeTypingUsers.length === 1 ? 'is' : 'are'} typing...
+                      💬 {activeTypingUsers.join(', ')} is typing...
                     </div>
                   )}
 
@@ -2800,53 +2912,49 @@ function ProjectWorkspaceContent() {
 
               {drawerSubTab === 'history' && (
                 <div className="drawer-section task-history-tab">
-                  <span className="section-label">Task Revision History</span>
+                  <span className="section-label">Revision Audits</span>
                   <div className="task-logs-feed">
-                    {taskLogs.length === 0 ? (
-                      <div className="timeline-empty">No edits recorded for this task card.</div>
-                    ) : (
-                      taskLogs.map((log) => {
-                        const avatar = log.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(log.user?.name || log.user?.email || 'U')}`;
-                        const isTextCompare = log.action === 'update' && ['description', 'title'].includes(log.fieldName);
-                        
-                        return (
-                          <div key={log.id} className="task-log-item animate-scale-in">
-                            <div className="log-header">
-                              <img src={avatar} alt="User" className="log-avatar" />
-                              <div>
-                                <strong>{log.user?.name || log.user?.email}</strong>
-                                <span className="timestamp">{new Date(log.createdAt).toLocaleString()}</span>
-                              </div>
+                    {taskLogs.map((log) => {
+                      const avatar = log.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(log.user?.name || log.user?.email || 'U')}`;
+                      const isTextCompare = log.action === 'update' && ['description', 'title'].includes(log.fieldName);
+                      
+                      return (
+                        <div key={log.id} className="task-log-item animate-scale-in">
+                          <div className="log-header">
+                            <img src={avatar} alt="User" className="log-avatar" />
+                            <div>
+                              <strong>{log.user?.name || log.user?.email}</strong>
+                              <span className="timestamp">{new Date(log.createdAt).toLocaleString()}</span>
                             </div>
-
-                            <p className="log-text">
-                              <span className={`log-badge ${log.action}`}>{log.action}</span>
-                              {log.action === 'create' && `Created this task card`}
-                              {log.action === 'comment' && `Commented: "${log.newValue}"`}
-                              {log.action === 'restore' && `Restored property ${log.fieldName}`}
-                              {log.action === 'update' && (
-                                <>
-                                  Updated <code>{log.fieldName}</code> from <span className="old-text">"{log.oldValue || 'empty'}"</span> to <span className="new-text">"{log.newValue || 'empty'}"</span>
-                                </>
-                              )}
-                            </p>
-
-                            {isTextCompare && (
-                              <div className="log-actions">
-                                <button className="btn-compare" onClick={() => setCompareLog(log)}>
-                                  🔎 Diff View
-                                </button>
-                                {!isViewer && (
-                                  <button className="btn-restore-link" onClick={() => handleRestoreVersion(log.id)}>
-                                    🔄 Restore
-                                  </button>
-                                )}
-                              </div>
-                            )}
                           </div>
-                        );
-                      })
-                    )}
+
+                          <p className="log-text">
+                            <span className={`log-badge ${log.action}`}>{log.action}</span>
+                            {log.action === 'create' && `Created this task card`}
+                            {log.action === 'comment' && `Commented: "${log.newValue}"`}
+                            {log.action === 'restore' && `Restored property ${log.fieldName}`}
+                            {log.action === 'update' && (
+                              <>
+                                Updated <code>{log.fieldName}</code> from <span className="old-text">"{log.oldValue || 'empty'}"</span> to <span className="new-text">"{log.newValue || 'empty'}"</span>
+                              </>
+                            )}
+                          </p>
+
+                          {isTextCompare && (
+                            <div className="log-actions">
+                              <button className="btn-compare" onClick={() => setCompareLog(log)}>
+                                🔎 Diff Details
+                              </button>
+                              {!isViewer && (
+                                <button className="btn-restore-link" onClick={() => handleRestoreVersion(log.id)}>
+                                  🔄 Restore
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -2856,35 +2964,23 @@ function ProjectWorkspaceContent() {
         </div>
       )}
 
-      {/* THREAD REPLIES SIDE SIDE PANEL DRAWER */}
+      {/* THREAD REPLIES SIDE DRAWER PANEL */}
       {isThreadDrawerOpen && selectedParentMessage && (
         <div className="drawer-overlay" onClick={() => setIsThreadDrawerOpen(false)}>
           <div className="drawer-panel glass thread-drawer-panel animate-slide-in-right" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
-              <span className="drawer-task-id">🧵 Conversation Thread Reply Board</span>
+              <span className="drawer-task-id">🧵 Discussion Thread</span>
               <button className="btn-close-drawer" onClick={() => setIsThreadDrawerOpen(false)}>✕</button>
             </div>
 
             <div className="drawer-body">
-              {/* Parent Message Card */}
               <div className="thread-parent-message-card glass">
                 <div className="chat-bubble-meta">
                   <strong>{selectedParentMessage.user?.name || selectedParentMessage.user?.email}</strong>
                   <span className="timestamp">{new Date(selectedParentMessage.createdAt).toLocaleString()}</span>
                 </div>
                 <p className="chat-text-payload parent-p">{renderMessageContent(selectedParentMessage.text)}</p>
-                {selectedParentMessage.attachments && selectedParentMessage.attachments.length > 0 && (
-                  <div className="chat-shared-files">
-                    {selectedParentMessage.attachments.map((a: any, idx: number) => (
-                      <div key={idx} className="file-attachment-card">
-                        📎 {a.name}
-                        <a href={a.url} target="_blank" rel="noreferrer" className="btn-dl">Download</a>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 
-                {/* Reactions trigger */}
                 <div className="chat-actions-row">
                   <div className="reactions-picker">
                     {['👍', '❤️', '🔥', '🎉'].map(emoji => {
@@ -2906,11 +3002,10 @@ function ProjectWorkspaceContent() {
                 </div>
               </div>
 
-              {/* Replies chronological stack */}
-              <span className="section-label">Replies timeline</span>
+              <span className="section-label">Replies</span>
               <div className="replies-timeline-stack">
                 {(!selectedParentMessage.replies || selectedParentMessage.replies.length === 0) ? (
-                  <div className="no-comments">No thread replies posted yet. Be the first!</div>
+                  <div className="no-comments">No replies yet.</div>
                 ) : (
                   selectedParentMessage.replies.map((reply: any) => {
                     const avatar = reply.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(reply.user?.name || reply.user?.email || 'U')}`;
@@ -2924,17 +3019,6 @@ function ProjectWorkspaceContent() {
                           </div>
                           <p className="chat-text-payload">{renderMessageContent(reply.text)}</p>
 
-                          {reply.attachments && reply.attachments.length > 0 && (
-                            <div className="chat-shared-files">
-                              {reply.attachments.map((a: any, idx: number) => (
-                                <div key={idx} className="file-attachment-card">
-                                  📎 {a.name}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Reply reactions */}
                           <div className="chat-actions-row">
                             <div className="reactions-picker">
                               {['👍', '❤️', '🔥', '🎉'].map(emoji => {
@@ -2963,32 +3047,8 @@ function ProjectWorkspaceContent() {
               </div>
             </div>
 
-            {/* Post thread reply form */}
             <div className="chat-input-controls thread-inputs">
-              {threadAttachments.length > 0 && (
-                <div className="chat-queued-files">
-                  {threadAttachments.map((file, idx) => (
-                    <span key={idx} className="queued-file-pill">
-                      📄 {file.name}
-                      <button className="btn-q-del" onClick={() => setThreadAttachments([])}>✕</button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
               <form onSubmit={(e) => handleSendChatMessage(e, selectedParentMessage.id)} className="chat-submission-form">
-                <button
-                  type="button"
-                  className="btn-attach-clip"
-                  onClick={() => {
-                    const name = prompt('Simulate thread attachment file sharing:');
-                    if (name) {
-                      setThreadAttachments([{ name, url: '#', size: 19200 }]);
-                    }
-                  }}
-                >
-                  📎
-                </button>
                 <input
                   type="text"
                   placeholder="Reply in thread..."
@@ -3007,7 +3067,7 @@ function ProjectWorkspaceContent() {
         <div className="modal-overlay" onClick={() => setIsAiSummaryOpen(false)}>
           <div className="modal-card glass ai-summary-card animate-fade-in" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>🪄 Dynamic AI Chat Executive Brief</h2>
+              <h2>🪄 AI Chat Executive Summary</h2>
               <button className="btn-close-modal" onClick={() => setIsAiSummaryOpen(false)}>✕</button>
             </div>
 
@@ -3027,7 +3087,7 @@ function ProjectWorkspaceContent() {
 
             <div className="modal-actions-footer">
               <button className="btn-primary" onClick={() => setIsAiSummaryOpen(false)}>
-                Acknowledge Summary
+                Dismiss
               </button>
             </div>
           </div>
@@ -3038,7 +3098,7 @@ function ProjectWorkspaceContent() {
       {showUndoBanner && (
         <div className="global-undo-banner animate-slide-up glass">
           <span>{undoMessage}. Revert last action?</span>
-          <button className="btn-undo-trigger" onClick={handleGlobalUndo}>Revert / Undo</button>
+          <button className="btn-undo-trigger" onClick={handleGlobalUndo}>Revert</button>
           <button className="btn-undo-dismiss" onClick={() => setShowUndoBanner(false)}>✕</button>
         </div>
       )}
@@ -3055,17 +3115,17 @@ function ProjectWorkspaceContent() {
             <div className="diff-modal-body">
               <div className="split-compare-grid">
                 <div className="compare-pane previous">
-                  <h3>Previous State</h3>
-                  <div className="pane-content">{compareLog.oldValue || <span className="text-tertiary">No description.</span>}</div>
+                  <h3>Previous</h3>
+                  <div className="pane-content">{compareLog.oldValue || 'Empty'}</div>
                 </div>
                 <div className="compare-pane current">
-                  <h3>Updated State</h3>
-                  <div className="pane-content">{compareLog.newValue || <span className="text-tertiary">No description.</span>}</div>
+                  <h3>Updated</h3>
+                  <div className="pane-content">{compareLog.newValue || 'Empty'}</div>
                 </div>
               </div>
 
               <div className="word-diff-section">
-                <h3>Word-level Changes Highlighted</h3>
+                <h3>Word-level Changes</h3>
                 <div className="word-diff-highlight-pane">
                   {(() => {
                     const tokens = computeWordDiff(compareLog.oldValue || '', compareLog.newValue || '');
@@ -3088,7 +3148,7 @@ function ProjectWorkspaceContent() {
               </button>
               {!isViewer && (
                 <button className="btn-primary" onClick={() => handleRestoreVersion(compareLog.id)}>
-                  🔄 Restore this version
+                  🔄 Restore version
                 </button>
               )}
             </div>
@@ -3096,170 +3156,21 @@ function ProjectWorkspaceContent() {
         </div>
       )}
 
-      {/* PROJECT EDIT SETTINGS MODAL */}
-      {isEditProjectOpen && (
-        <div className="modal-overlay" onClick={() => setIsEditProjectOpen(false)}>
-          <div className="modal-card glass animate-fade-in" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Project Configuration Settings</h2>
-              <button className="btn-close-modal" onClick={() => setIsEditProjectOpen(false)}>✕</button>
-            </div>
-
-            <form onSubmit={handleProjectEditSubmit} className="modal-form">
-              <div className="input-group">
-                <label>Project Name</label>
-                <input
-                  type="text"
-                  value={projName}
-                  onChange={(e) => setProjName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="input-group">
-                <label>Description</label>
-                <textarea
-                  value={projDesc}
-                  onChange={(e) => setProjDesc(e.target.value)}
-                  rows={4}
-                />
-              </div>
-
-              <div className="actions-buttons-column">
-                <button type="button" className="btn-action duplicate" onClick={handleDuplicateProject}>
-                  👥 Duplicate Project Copy
-                </button>
-                <button type="button" className="btn-action archive" onClick={handleArchiveProject}>
-                  📦 Move Project to Archive
-                </button>
-                <button type="button" className="btn-action delete" onClick={handleDeleteProject}>
-                  🗑️ Permanently Delete Project
-                </button>
-              </div>
-
-              <div className="modal-actions-footer">
-                <button type="button" className="btn-secondary" onClick={() => setIsEditProjectOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* AI ASSISTANT COPROCESSOR DRAWER PANEL */}
-      {isAiCoprocessorOpen && (
-        <div className="drawer-overlay" onClick={() => setIsAiCoprocessorOpen(false)}>
-          <div className="drawer-panel glass ai-coprocessor-drawer animate-slide-in-right" onClick={(e) => e.stopPropagation()}>
-            <div className="drawer-header">
-              <span className="drawer-task-id">✨ Ask AI Coprocessor</span>
-              <button className="btn-close-drawer" onClick={() => setIsAiCoprocessorOpen(false)}>✕</button>
-            </div>
-            
-            <div className="drawer-body ai-body">
-              {/* Message timeline stream */}
-              <div className="ai-chat-stream">
-                {aiMessages.map((msg, idx) => (
-                  <div key={idx} className={`ai-bubble-row ${msg.sender}`}>
-                    <div className="ai-bubble-content">
-                      {msg.text.split('\n').map((line, lIdx) => {
-                        if (line.startsWith('###')) {
-                          return <h3 key={lIdx} style={{ fontSize: '13px', fontWeight: '800', color: 'var(--primary)', margin: '8px 0 4px 0' }}>{line.replace('###', '')}</h3>;
-                        }
-                        if (line.startsWith('- **') || line.startsWith('• **')) {
-                          return <p key={lIdx} style={{ fontSize: '12px', margin: '4px 0', paddingLeft: '8px' }}>{line}</p>;
-                        }
-                        return <p key={lIdx} style={{ fontSize: '12px', margin: '4px 0' }}>{line}</p>;
-                      })}
-                      
-                      {/* Interactive suggestion executor button */}
-                      {msg.actionPayload && (
-                        <button
-                          onClick={() => handleExecuteAiAction(msg.actionPayload)}
-                          className="btn-ai-action-execute animate-pulse"
-                        >
-                          ✨ Apply AI suggestions to project
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {isAiResponding && (
-                  <div className="ai-bubble-row ai">
-                    <div className="ai-bubble-content animate-pulse" style={{ color: 'var(--fg-tertiary)' }}>
-                      Analyzing project context...
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Suggestions Quick click list */}
-              <div className="ai-suggestions-row">
-                {[
-                  'What changed today?',
-                  'What is blocking the sprint?',
-                  'What should I work on next?',
-                  'Generate Tasks',
-                  'Detect Risks',
-                  'Break Task into Subtasks',
-                  'Summarize Chat'
-                ].map((promptText) => (
-                  <button
-                    key={promptText}
-                    onClick={() => handleAskAi(promptText)}
-                    className="suggestion-pill"
-                    disabled={isAiResponding}
-                  >
-                    {promptText}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Chat submit panel */}
-            <div className="chat-input-controls">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleAskAi(aiInputText);
-                }}
-                className="chat-submission-form"
-              >
-                <input
-                  type="text"
-                  placeholder="Ask anything about this project..."
-                  value={aiInputText}
-                  onChange={(e) => setAiInputText(e.target.value)}
-                  disabled={isAiResponding}
-                />
-                <button type="submit" className="btn-chat-send" disabled={isAiResponding}>Ask</button>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* RIGHT DRAWER: FILE DETAIL AND WORKSPACE COLLABORATION PANEL */}
+      {/* RIGHT DRAWER: FILE DETAIL PANEL */}
       {isFileDrawerOpen && selectedFile && (
         <div className="drawer-overlay" onClick={() => setIsFileDrawerOpen(false)}>
           <div className="drawer-panel glass animate-slide-in-right" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
-              <span className="drawer-task-id">📁 Document Workspace Details</span>
+              <span className="drawer-task-id">Document Inspector</span>
               <button className="btn-close-drawer" onClick={() => setIsFileDrawerOpen(false)}>✕</button>
             </div>
 
             <div className="drawer-subtabs-row">
               <button className={`subtab-btn ${fileDrawerSubTab === 'preview' ? 'active' : ''}`} onClick={() => setFileDrawerSubTab('preview')}>
-                🖼️ Previews
+                🖼️ Preview
               </button>
               <button className={`subtab-btn ${fileDrawerSubTab === 'versions' ? 'active' : ''}`} onClick={() => setFileDrawerSubTab('versions')}>
-                 Revisions ({selectedFile.versions?.length || 1})
-              </button>
-              <button className={`subtab-btn ${fileDrawerSubTab === 'downloads' ? 'active' : ''}`} onClick={() => setFileDrawerSubTab('downloads')}>
-                👥 Access Log ({selectedFile.downloads?.length || 0})
+                Revisions
               </button>
               <button className={`subtab-btn ${fileDrawerSubTab === 'ai' ? 'active' : ''}`} onClick={() => setFileDrawerSubTab('ai')}>
                 ✨ Coprocessor
@@ -3269,18 +3180,17 @@ function ProjectWorkspaceContent() {
             <div className="drawer-body">
               {fileDrawerSubTab === 'preview' && (
                 <div className="drawer-section">
-                  <strong style={{ fontSize: '15px', color: 'var(--fg-primary)', display: 'block', marginBottom: '14px' }}>
+                  <strong style={{ fontSize: '14px', color: 'var(--fg-primary)', display: 'block', marginBottom: '12px' }}>
                     {selectedFile.name}
                   </strong>
 
-                  {/* PDF Preview Frame simulator */}
                   {selectedFile.name.toLowerCase().endsWith('.pdf') ? (
                     <div className="simulated-pdf-viewer glass">
                       <div className="pdf-page-canvas">
-                        <h4>📄 CollabSpace PDF Pre-Viewer Framework</h4>
+                        <h4>📄 PDF pre-viewer framework</h4>
                         <p className="pdf-page-mark">Document: {selectedFile.name}</p>
                         <p style={{ fontStyle: 'italic', color: 'var(--fg-tertiary)', marginTop: '20px' }}>
-                          Page {pdfPage} of 3 - Architectural Outline weights logs
+                          Page {pdfPage} of 3
                         </p>
                       </div>
                       <div className="pdf-page-controls">
@@ -3290,14 +3200,12 @@ function ProjectWorkspaceContent() {
                       </div>
                     </div>
                   ) : selectedFile.name.toLowerCase().match(/\.(png|jpg|jpeg|webp)$/) ? (
-                    /* Image preview frame */
                     <div className="simulated-img-viewer glass">
                       <img src={selectedFile.versions?.[0]?.url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60'} alt="Image Preview" className="preview-asset-img" />
                     </div>
                   ) : (
-                    /* Text spreadsheets previews */
                     <div className="simulated-csv-viewer glass">
-                      <p className="no-comments">No direct previews canvas for this filetype. Previews are available for PNG/PDF assets.</p>
+                      <p className="no-comments">No preview canvas available for this format.</p>
                     </div>
                   )}
 
@@ -3306,15 +3214,14 @@ function ProjectWorkspaceContent() {
                     style={{ marginTop: '20px', width: '100%', textAlign: 'center' }}
                     onClick={() => handleDownloadFileAction(selectedFile.currentVersion)}
                   >
-                    📥 Download Document (v{selectedFile.currentVersion})
+                    📥 Download (v{selectedFile.currentVersion})
                   </button>
                 </div>
               )}
 
               {fileDrawerSubTab === 'versions' && (
                 <div className="drawer-section">
-                  <span className="section-label">Revision History logs</span>
-                  
+                  <span className="section-label">Revision Audits</span>
                   <div className="task-logs-feed">
                     {selectedFile.versions?.map((v: any) => (
                       <div key={v.id} className="task-log-item animate-scale-in">
@@ -3325,17 +3232,14 @@ function ProjectWorkspaceContent() {
                             <span className="timestamp">{new Date(v.createdAt).toLocaleString()}</span>
                           </div>
                         </div>
-                        <p className="log-text" style={{ fontSize: '11px', color: 'var(--fg-secondary)' }}>
-                          File Size: {(v.size / 1024).toFixed(1)} KB | MIME: <code>{v.mimeType}</code>
-                        </p>
-                        <button className="btn-compare" style={{ width: 'fit-content' }} onClick={() => handleDownloadFileAction(v.version)}>
-                          📥 Download Version {v.version}
+                        <button className="btn-compare" style={{ width: 'fit-content', marginTop: '6px' }} onClick={() => handleDownloadFileAction(v.version)}>
+                          📥 Download v{v.version}
                         </button>
                       </div>
                     ))}
                   </div>
 
-                  {!(isViewer) && (
+                  {!isViewer && (
                     <button className="btn-upload-mock" style={{ marginTop: '20px' }} onClick={handleUploadNewVersionAction}>
                       📤 Upload New Version
                     </button>
@@ -3343,31 +3247,9 @@ function ProjectWorkspaceContent() {
                 </div>
               )}
 
-              {fileDrawerSubTab === 'downloads' && (
-                <div className="drawer-section">
-                  <span className="section-label">Document Access Log</span>
-                  <div className="task-logs-feed">
-                    {(!selectedFile.downloads || selectedFile.downloads.length === 0) ? (
-                      <p className="no-comments">No user download logs registered for this file.</p>
-                    ) : (
-                      selectedFile.downloads.map((d: any) => (
-                        <div key={d.id} className="checklist-item">
-                          <span style={{ fontSize: '12px', color: 'var(--fg-primary)' }}>
-                            📥 **{d.user?.name || d.user?.email}** downloaded **v{d.version}**
-                          </span>
-                          <span className="timestamp" style={{ fontSize: '10px', color: 'var(--fg-tertiary)' }}>
-                            {new Date(d.createdAt).toLocaleString()}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
               {fileDrawerSubTab === 'ai' && (
                 <div className="drawer-section">
-                  <span className="section-label">AI Coprocessor Document Tools</span>
+                  <span className="section-label">AI Coprocessor Tools</span>
                   <div className="dependency-add-controls" style={{ gap: '10px' }}>
                     <button className="btn-primary" onClick={() => handleRunFileAiAction('summary')}>
                       🪄 AI Document Summary
@@ -3438,21 +3320,98 @@ function ProjectWorkspaceContent() {
         </div>
       )}
 
+      {/* PREMIUM FLOATING AI ASSISTANT CHAT PANEL (ChatGPT Style, minimized/maximized) */}
+      <div className={`floating-ai-wrapper ${isAiCoprocessorOpen ? 'expanded' : 'minimized'}`}>
+        {isAiCoprocessorOpen ? (
+          <div className="ai-coprocessor-card glass animate-scale-in">
+            <div className="ai-card-header">
+              <span className="title">🤖 AI Coprocessor</span>
+              <button className="btn-minimize-ai" onClick={() => setIsAiCoprocessorOpen(false)}>✕</button>
+            </div>
+            
+            <div className="ai-chat-body">
+              <div className="ai-messages-stream">
+                {aiMessages.map((msg, idx) => (
+                  <div key={idx} className={`ai-bubble-row ${msg.sender}`}>
+                    <div className="ai-bubble-content">
+                      {msg.text.split('\n').map((line, lIdx) => {
+                        if (line.startsWith('###')) {
+                          return <h3 key={lIdx} style={{ fontSize: '12px', fontWeight: '800', color: 'var(--primary)', margin: '6px 0 2px 0' }}>{line.replace('###', '')}</h3>;
+                        }
+                        if (line.startsWith('- **') || line.startsWith('• **')) {
+                          return <p key={lIdx} style={{ fontSize: '11px', margin: '3px 0', paddingLeft: '6px' }}>{line}</p>;
+                        }
+                        return <p key={lIdx} style={{ fontSize: '11px', margin: '3px 0' }}>{line}</p>;
+                      })}
+                      {msg.actionPayload && (
+                        <button onClick={() => handleExecuteAiAction(msg.actionPayload)} className="btn-ai-action-execute animate-pulse">
+                          ✨ Apply Suggestions
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {isAiResponding && (
+                  <div className="ai-bubble-row ai">
+                    <div className="ai-bubble-content animate-pulse" style={{ color: 'var(--fg-tertiary)' }}>
+                      Analyzing...
+                    </div>
+                  </div>
+                )}
+                <div ref={aiChatEndRef} />
+              </div>
+
+              {/* Suggestions Quick keys */}
+              <div className="ai-suggestions-grid">
+                {[
+                  'What changed today?',
+                  'Find blockers',
+                  'Generate sprint',
+                  'Suggest priorities'
+                ].map((txt) => (
+                  <button key={txt} onClick={() => handleAskAi(txt)} className="ai-suggestion-badge" disabled={isAiResponding}>
+                    {txt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="ai-card-footer">
+              <form onSubmit={(e) => { e.preventDefault(); handleAskAi(aiInputText); }} className="ai-input-form">
+                <input
+                  type="text"
+                  placeholder="Ask about task details, deadlines..."
+                  value={aiInputText}
+                  onChange={(e) => setAiInputText(e.target.value)}
+                  disabled={isAiResponding}
+                />
+                <button type="submit" disabled={isAiResponding}>Ask</button>
+              </form>
+            </div>
+          </div>
+        ) : (
+          <button className="btn-floating-ai-trigger glow-effect" onClick={() => setIsAiCoprocessorOpen(true)} title="Open AI Coprocessor">
+            🤖 Ask AI
+          </button>
+        )}
+      </div>
+
       <style jsx>{`
         .workspace-container {
           padding: 24px;
           display: flex;
           flex-direction: column;
-          gap: 20px;
-          height: calc(100vh - 56px);
+          gap: 24px;
+          height: calc(100vh - 52px);
           overflow: hidden;
+          background: var(--bg-primary);
         }
 
         /* Offline Warning banner styling */
         .offline-warning-banner {
           background: linear-gradient(90deg, #b45309 0%, #d97706 100%);
           color: white;
-          padding: 8px;
+          padding: 6px;
           text-align: center;
           font-size: 11px;
           font-weight: 700;
@@ -3463,12 +3422,14 @@ function ProjectWorkspaceContent() {
 
         /* Header block styling */
         .workspace-header {
-          padding: 20px 24px;
-          border-radius: var(--radius-lg);
+          padding: 16px 20px;
+          border-radius: var(--radius-md);
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 12px;
           flex-shrink: 0;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
         }
         .header-top {
           display: flex;
@@ -3479,100 +3440,80 @@ function ProjectWorkspaceContent() {
         .project-title-info {
           display: flex;
           align-items: center;
-          gap: 16px;
+          gap: 12px;
           flex-grow: 1;
         }
         .folder-icon {
-          font-size: 32px;
+          font-size: 24px;
         }
         .project-title-info h2 {
-          font-size: 20px;
+          font-size: 16px;
           font-weight: 800;
           color: var(--fg-primary);
+          letter-spacing: -0.03em;
         }
         .project-title-info .description {
-          font-size: 13px;
+          font-size: 12px;
           color: var(--fg-secondary);
-          margin-top: 4px;
-        }
-        .btn-settings-edit {
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-sm);
-          padding: 4px 10px;
-          font-size: 11px;
-          cursor: pointer;
-          color: var(--fg-secondary);
-        }
-        .btn-settings-edit:hover {
-          color: var(--fg-primary);
-          background: var(--bg-tertiary);
+          margin-top: 2px;
         }
 
         .header-meta-actions {
           display: flex;
-          gap: 16px;
+          gap: 12px;
           align-items: center;
         }
         
-        /* Presence indicators row styles */
         .presence-avatars-row {
           display: flex;
           align-items: center;
-          gap: 12px;
-          background: var(--bg-secondary);
-          padding: 6px 12px;
-          border-radius: var(--radius-md);
+          gap: 10px;
+          background: var(--bg-primary);
+          padding: 4px 10px;
+          border-radius: var(--radius-sm);
           border: 1px solid var(--border-color);
         }
         .status-badge-connection {
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 700;
           text-transform: uppercase;
-          padding: 2px 6px;
-          border-radius: 4px;
           color: var(--fg-secondary);
         }
-        .status-badge-connection.connected { background: rgba(16,185,129,0.06); color: var(--success); }
-        .status-badge-connection.connecting { background: rgba(245,158,11,0.06); color: var(--warning); }
-        .status-badge-connection.fallback { background: rgba(59,130,246,0.06); color: var(--info); }
-        .status-badge-connection.disconnected { background: rgba(239,68,68,0.06); color: var(--error); }
+        .status-badge-connection.connected { color: var(--success); }
+        .status-badge-connection.connecting { color: var(--warning); }
+        .status-badge-connection.fallback { color: var(--info); }
+        .status-badge-connection.disconnected { color: var(--error); }
 
         .avatars-group {
           display: flex;
           align-items: center;
         }
         .presence-avatar {
-          width: 24px;
-          height: 24px;
+          width: 20px;
+          height: 20px;
           border-radius: 50%;
-          border: 2px solid var(--bg-secondary);
-          margin-left: -8px;
+          border: 1.5px solid var(--bg-secondary);
+          margin-left: -6px;
           background: var(--bg-tertiary);
-          animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
         .presence-avatar:first-child {
           margin-left: 0;
         }
 
-        @keyframes scaleIn {
-          0% { transform: scale(0); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-
         .btn-fav-star {
-          background: var(--bg-secondary);
+          background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          padding: 6px 12px;
+          padding: 5px 10px;
           border-radius: var(--radius-sm);
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-secondary);
           font-weight: 600;
           cursor: pointer;
+          transition: border-color var(--transition-fast);
         }
         .btn-fav-star:hover {
           color: var(--warning);
-          background: var(--bg-tertiary);
+          border-color: var(--border-hover);
         }
         .btn-fav-star.active {
           color: var(--warning);
@@ -3586,31 +3527,31 @@ function ProjectWorkspaceContent() {
           justify-content: space-between;
           align-items: center;
           border-top: 1px solid var(--border-color);
-          padding-top: 14px;
+          padding-top: 10px;
           flex-wrap: wrap;
           gap: 12px;
         }
         .view-switcher-tabs {
           display: flex;
-          gap: 6px;
+          gap: 4px;
         }
         .tab-btn {
           border: none;
           background: none;
           color: var(--fg-secondary);
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 600;
-          padding: 8px 16px;
+          padding: 6px 12px;
           border-radius: var(--radius-sm);
           cursor: pointer;
           transition: background-color var(--transition-fast), color var(--transition-fast);
         }
         .tab-btn:hover {
-          background: var(--bg-secondary);
+          background: var(--bg-primary);
           color: var(--fg-primary);
         }
         .tab-btn.active {
-          background: rgba(99,102,241,0.08);
+          background: rgba(79,70,229,0.08);
           color: var(--primary);
         }
 
@@ -3621,24 +3562,21 @@ function ProjectWorkspaceContent() {
         .progress-bar-container {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
           align-items: flex-end;
-          font-size: 11px;
+          font-size: 10px;
           color: var(--fg-secondary);
         }
         .mini-progress-bg {
-          width: 140px;
-          height: 6px;
+          width: 100px;
+          height: 4px;
           background: var(--bg-tertiary);
-          border: 1px solid var(--border-color);
-          border-radius: 3px;
+          border-radius: 2px;
           overflow: hidden;
         }
         .mini-progress-fill {
           height: 100%;
-          background: linear-gradient(90deg, var(--primary) 0%, #818cf8 100%);
-          border-radius: 3px;
-          transition: width 0.4s ease-out;
+          background: var(--primary);
         }
 
         /* Workspace Content Body container */
@@ -3648,7 +3586,128 @@ function ProjectWorkspaceContent() {
           position: relative;
         }
 
-        /* 1. KANBAN BOARD */
+        /* TAB 1: OVERVIEW TAB DESIGN */
+        .overview-tab-layout {
+          height: 100%;
+          overflow-y: auto;
+          padding-bottom: 24px;
+        }
+        .overview-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+          gap: 20px;
+        }
+        .overview-card {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-lg);
+          padding: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .overview-card-label {
+          font-size: 9px;
+          font-weight: 800;
+          color: var(--fg-tertiary);
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
+        }
+        .health-radial-box {
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+        .health-text-details h3 {
+          font-size: 14px;
+          font-weight: 800;
+          color: var(--fg-primary);
+        }
+        .health-text-details p {
+          font-size: 11px;
+          color: var(--fg-secondary);
+          margin-top: 2px;
+        }
+        .overview-mini-metrics {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          border-top: 1px solid var(--border-color);
+          padding-top: 14px;
+        }
+        .mini-metric {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .mini-metric span {
+          font-size: 10px;
+          color: var(--fg-tertiary);
+        }
+        .mini-metric strong {
+          font-size: 13px;
+          color: var(--fg-primary);
+        }
+        .mini-list-preview {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .mini-list-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 8px 12px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          cursor: pointer;
+        }
+        .mini-list-item:hover {
+          border-color: var(--border-hover);
+        }
+        .mini-list-item strong {
+          flex-grow: 1;
+          color: var(--fg-primary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .mini-list-item .meta {
+          font-size: 9px;
+          color: var(--fg-tertiary);
+        }
+        .members-profile-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .member-profile-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .member-profile-avatar {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          border: 1px solid var(--border-color);
+        }
+        .member-profile-info {
+          display: flex;
+          flex-direction: column;
+        }
+        .member-profile-info strong {
+          font-size: 11px;
+          color: var(--fg-primary);
+        }
+        .member-profile-info span {
+          font-size: 9px;
+          color: var(--fg-tertiary);
+        }
+
+        /* 2. KANBAN BOARD */
         .kanban-board-layout {
           display: flex;
           gap: 16px;
@@ -3658,7 +3717,7 @@ function ProjectWorkspaceContent() {
           padding-bottom: 8px;
         }
         .kanban-column {
-          width: 280px;
+          width: 260px;
           flex-shrink: 0;
           display: flex;
           flex-direction: column;
@@ -3666,7 +3725,7 @@ function ProjectWorkspaceContent() {
           padding: 16px;
           max-height: 100%;
           overflow-y: auto;
-          background: rgba(255,255,255,0.01);
+          background: rgba(255,255,255,0.005);
         }
         .column-header {
           display: flex;
@@ -3675,7 +3734,7 @@ function ProjectWorkspaceContent() {
           gap: 8px;
         }
         .col-indicator {
-          font-size: 12px;
+          font-size: 10px;
         }
         .col-indicator.backlog { color: var(--fg-tertiary); }
         .col-indicator.todo { color: var(--info); }
@@ -3684,18 +3743,18 @@ function ProjectWorkspaceContent() {
         .col-indicator.cancelled { color: var(--error); }
 
         .column-header h3 {
-          font-size: 12px;
-          font-weight: 700;
+          font-size: 11px;
+          font-weight: 800;
           color: var(--fg-secondary);
           flex-grow: 1;
           letter-spacing: 0.05em;
         }
         .col-count {
-          font-size: 10px;
-          background: var(--bg-secondary);
+          font-size: 9px;
+          background: var(--bg-tertiary);
           color: var(--fg-secondary);
-          padding: 2px 6px;
-          border-radius: 4px;
+          padding: 1px 4px;
+          border-radius: 3px;
           font-weight: 700;
         }
 
@@ -3704,12 +3763,12 @@ function ProjectWorkspaceContent() {
         }
         .quick-add-form input {
           width: 100%;
-          padding: 8px 10px;
+          padding: 6px 10px;
           background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
+          border: 1px dashed var(--border-color);
           border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 12px;
+          font-size: 11px;
           outline: none;
         }
         .quick-add-form input:focus {
@@ -3719,14 +3778,14 @@ function ProjectWorkspaceContent() {
         .cards-stack {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           flex-grow: 1;
           overflow-y: auto;
         }
         .column-empty {
-          border: 2px dashed var(--border-color);
+          border: 1px dashed var(--border-color);
           border-radius: var(--radius-md);
-          padding: 24px;
+          padding: 20px;
           text-align: center;
           color: var(--fg-tertiary);
           font-size: 11px;
@@ -3735,58 +3794,58 @@ function ProjectWorkspaceContent() {
 
         /* Kanban task card styles */
         .task-card {
-          padding: 16px;
+          padding: 12px;
           border-radius: var(--radius-md);
           cursor: pointer;
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 8px;
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          transition: transform 0.2s, border-color var(--transition-fast);
+          box-shadow: var(--shadow-sm);
+          transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
         }
         .task-card:hover {
-          transform: translateY(-2px);
           border-color: var(--border-hover);
+          box-shadow: var(--shadow-md);
         }
         .task-card.locked {
-          border-left: 4px solid var(--primary);
+          border-left: 3px solid var(--primary);
         }
         .card-top-tags {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
         .prio-pill {
-          font-size: 9px;
-          font-weight: 700;
+          font-size: 8px;
+          font-weight: 800;
           text-transform: uppercase;
-          padding: 2px 6px;
+          padding: 1px 4px;
           border-radius: 3px;
           margin-right: auto;
         }
-        .prio-pill.low { background: rgba(113,113,122,0.1); color: var(--fg-secondary); }
-        .prio-pill.medium { background: rgba(59,130,246,0.1); color: var(--info); }
-        .prio-pill.high { background: rgba(245,158,11,0.1); color: var(--warning); }
-        .prio-pill.urgent { background: rgba(239,68,68,0.1); color: var(--error); }
+        .prio-pill.low { background: rgba(113,113,122,0.08); color: var(--fg-secondary); }
+        .prio-pill.medium { background: rgba(59,130,246,0.08); color: var(--info); }
+        .prio-pill.high { background: rgba(245,158,11,0.08); color: var(--warning); }
+        .prio-pill.urgent { background: rgba(239,68,68,0.08); color: var(--error); }
 
         .editing-badge-dot {
-          font-size: 9px;
+          font-size: 8px;
           background: var(--primary-glow);
           color: var(--primary);
-          padding: 2px 6px;
+          padding: 1px 4px;
           border-radius: 3px;
           font-weight: 600;
-          border: 1px solid rgba(99,102,241,0.15);
         }
         
         .star-tag {
           color: var(--warning);
-          font-size: 14px;
+          font-size: 11px;
         }
         .task-card h4 {
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 600;
           color: var(--fg-primary);
           line-height: 1.4;
@@ -3802,12 +3861,12 @@ function ProjectWorkspaceContent() {
         }
         .card-labels {
           display: flex;
-          gap: 4px;
+          gap: 3px;
         }
         .label-dot {
-          width: 12px;
-          height: 4px;
-          border-radius: 2px;
+          width: 10px;
+          height: 3px;
+          border-radius: 1.5px;
         }
 
         .card-footer-meta {
@@ -3815,8 +3874,8 @@ function ProjectWorkspaceContent() {
           justify-content: space-between;
           align-items: center;
           border-top: 1px solid var(--border-color);
-          padding-top: 8px;
-          font-size: 10px;
+          padding-top: 6px;
+          font-size: 9px;
         }
         .due-alert {
           color: var(--fg-secondary);
@@ -3827,11 +3886,11 @@ function ProjectWorkspaceContent() {
         }
         .right-indicators {
           display: flex;
-          gap: 8px;
+          gap: 6px;
           color: var(--fg-tertiary);
         }
 
-        /* 2. LIST VIEW */
+        /* 3. LIST VIEW */
         .list-view-layout {
           height: 100%;
           display: flex;
@@ -3840,31 +3899,30 @@ function ProjectWorkspaceContent() {
           overflow: hidden;
         }
         .list-toolbar {
-          padding: 12px 20px;
+          padding: 10px 16px;
           display: flex;
-          gap: 12px;
+          gap: 10px;
           border-bottom: 1px solid var(--border-color);
           align-items: center;
-          background: rgba(255,255,255,0.01);
         }
         .search-field {
           flex-grow: 1;
-          max-width: 240px;
-          padding: 6px 12px;
+          max-width: 220px;
+          padding: 5px 10px;
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
         }
         .select-field {
-          padding: 6px 10px;
+          padding: 5px 8px;
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
         }
         .table-wrapper {
@@ -3874,18 +3932,18 @@ function ProjectWorkspaceContent() {
         .list-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 13px;
+          font-size: 12px;
           text-align: left;
         }
         .list-table th,
         .list-table td {
-          padding: 12px 20px;
+          padding: 10px 16px;
           border-bottom: 1px solid var(--border-color);
         }
         .list-table th {
-          background: rgba(255,255,255,0.02);
-          font-size: 11px;
-          font-weight: 700;
+          background: rgba(255,255,255,0.01);
+          font-size: 10px;
+          font-weight: 800;
           color: var(--fg-tertiary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
@@ -3900,33 +3958,32 @@ function ProjectWorkspaceContent() {
         .task-title-cell {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 6px;
         }
         .task-title-cell .bullet {
           color: var(--primary);
-          font-size: 10px;
+          font-size: 8px;
         }
         .subtask-parent-tag {
-          font-size: 9px;
+          font-size: 8px;
           background: var(--bg-tertiary);
           color: var(--fg-tertiary);
-          padding: 1px 4px;
-          border-radius: 3px;
-          font-weight: 600;
+          padding: 1px 3px;
+          border-radius: 2px;
         }
 
         .status-badge {
-          font-size: 10px;
-          font-weight: 700;
+          font-size: 9px;
+          font-weight: 800;
           text-transform: uppercase;
-          padding: 2px 6px;
-          border-radius: 4px;
+          padding: 1px 4px;
+          border-radius: 3px;
         }
-        .status-badge.backlog { background: rgba(113,113,122,0.1); color: var(--fg-secondary); }
-        .status-badge.todo { background: rgba(59,130,246,0.1); color: var(--info); }
-        .status-badge.in_progress { background: rgba(99,102,241,0.1); color: var(--primary); }
-        .status-badge.done { background: rgba(16,185,129,0.1); color: var(--success); }
-        .status-badge.cancelled { background: rgba(239,68,68,0.1); color: var(--error); }
+        .status-badge.backlog { background: rgba(113,113,122,0.08); color: var(--fg-secondary); }
+        .status-badge.todo { background: rgba(59,130,246,0.08); color: var(--info); }
+        .status-badge.in_progress { background: rgba(79,70,229,0.08); color: var(--primary); }
+        .status-badge.done { background: rgba(34,197,94,0.08); color: var(--success); }
+        .status-badge.cancelled { background: rgba(239,68,68,0.08); color: var(--error); }
 
         .priority-text.low { color: var(--fg-secondary); }
         .priority-text.medium { color: var(--info); }
@@ -3934,20 +3991,20 @@ function ProjectWorkspaceContent() {
         .priority-text.urgent { color: var(--error); font-weight: 700; }
         .indicators-cell {
           color: var(--fg-tertiary);
-          font-size: 11px;
+          font-size: 10px;
         }
         .no-tasks {
           color: var(--fg-tertiary);
           font-style: italic;
-          padding: 32px;
+          padding: 24px;
         }
 
-        /* 3. CALENDAR PLANNER VIEW */
+        /* 4. CALENDAR PLANNER VIEW */
         .calendar-view-layout {
           height: 100%;
           display: flex;
           flex-direction: column;
-          padding: 16px;
+          padding: 12px;
           border-radius: var(--radius-lg);
           overflow: hidden;
         }
@@ -3955,36 +4012,31 @@ function ProjectWorkspaceContent() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 16px;
-          padding: 0 8px;
+          margin-bottom: 12px;
         }
         .calendar-toolbar h2 {
-          font-size: 16px;
+          font-size: 14px;
           font-weight: 800;
           color: var(--fg-primary);
         }
         .btn-arrow {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          width: 32px;
-          height: 32px;
+          width: 24px;
+          height: 24px;
           border-radius: 50%;
           cursor: pointer;
           color: var(--fg-primary);
-          font-size: 12px;
+          font-size: 10px;
           display: flex;
           align-items: center;
           justify-content: center;
-          transition: background-color var(--transition-fast);
-        }
-        .btn-arrow:hover {
-          background: var(--bg-tertiary);
         }
 
         .calendar-grid {
           display: grid;
           grid-template-columns: repeat(7, 1fr);
-          grid-auto-rows: minmax(70px, 1fr);
+          grid-auto-rows: minmax(60px, 1fr);
           gap: 1px;
           background: var(--border-color);
           border: 1px solid var(--border-color);
@@ -3994,21 +4046,21 @@ function ProjectWorkspaceContent() {
         }
         .calendar-day-header {
           background: var(--bg-secondary);
-          padding: 8px;
+          padding: 6px;
           text-align: center;
-          font-size: 10px;
-          font-weight: 700;
+          font-size: 9px;
+          font-weight: 800;
           text-transform: uppercase;
           color: var(--fg-tertiary);
           letter-spacing: 0.05em;
         }
         .calendar-day {
           background: var(--bg-primary);
-          padding: 6px;
+          padding: 4px;
           position: relative;
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
           min-height: 0;
           overflow: hidden;
         }
@@ -4017,7 +4069,7 @@ function ProjectWorkspaceContent() {
           opacity: 0.2;
         }
         .day-number {
-          font-size: 10px;
+          font-size: 9px;
           font-weight: 700;
           color: var(--fg-tertiary);
           align-self: flex-end;
@@ -4025,30 +4077,22 @@ function ProjectWorkspaceContent() {
         .day-tasks-stack {
           display: flex;
           flex-direction: column;
-          gap: 2px;
+          gap: 1.5px;
           overflow-y: auto;
           flex-grow: 1;
         }
         .day-task-pill {
-          font-size: 9px;
+          font-size: 8px;
           font-weight: 600;
-          padding: 2px 6px;
-          border-radius: 3px;
+          padding: 1px 4px;
+          border-radius: 2px;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
           cursor: pointer;
-          transition: transform 0.1s;
         }
-        .day-task-pill:hover {
-          transform: scale(1.02);
-        }
-        .day-task-pill.low { background: var(--bg-secondary); color: var(--fg-secondary); }
-        .day-task-pill.medium { background: rgba(59,130,246,0.15); color: var(--info); }
-        .day-task-pill.high { background: rgba(245,158,11,0.15); color: var(--warning); }
-        .day-task-pill.urgent { background: rgba(239,68,68,0.15); color: var(--error); }
 
-        /* 4. ACTIVITY TIMELINE */
+        /* 5. ACTIVITY TIMELINE */
         .timeline-layout {
           height: 100%;
           display: flex;
@@ -4057,32 +4101,31 @@ function ProjectWorkspaceContent() {
           overflow: hidden;
         }
         .timeline-toolbar {
-          padding: 12px 20px;
+          padding: 10px 16px;
           display: flex;
-          gap: 12px;
+          gap: 10px;
           border-bottom: 1px solid var(--border-color);
           align-items: center;
-          background: rgba(255,255,255,0.01);
         }
         .timeline-timeline-feed {
           flex-grow: 1;
           overflow-y: auto;
-          padding: 20px;
+          padding: 16px;
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 12px;
         }
         .timeline-card {
           display: flex;
-          gap: 14px;
-          padding: 16px;
+          gap: 12px;
+          padding: 12px;
           border-radius: var(--radius-md);
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
         }
         .timeline-avatar {
-          width: 32px;
-          height: 32px;
+          width: 28px;
+          height: 28px;
           border-radius: 50%;
           background: var(--bg-tertiary);
           flex-shrink: 0;
@@ -4090,76 +4133,72 @@ function ProjectWorkspaceContent() {
         .timeline-log-details {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 4px;
           flex-grow: 1;
         }
         .timeline-card-meta {
           display: flex;
           justify-content: space-between;
-          font-size: 12px;
+          font-size: 11px;
         }
         .timeline-card-meta .timestamp {
           color: var(--fg-tertiary);
-          font-size: 11px;
+          font-size: 10px;
         }
         .timeline-text {
-          font-size: 13px;
+          font-size: 12px;
           color: var(--fg-primary);
-          line-height: 1.5;
+          line-height: 1.4;
         }
         .log-badge {
-          font-size: 9px;
-          font-weight: 700;
+          font-size: 8px;
+          font-weight: 800;
           text-transform: uppercase;
-          padding: 2px 6px;
-          border-radius: 3px;
+          padding: 1px 4px;
+          border-radius: 2px;
         }
-        .log-badge.create { background: rgba(16,185,129,0.1); color: var(--success); }
-        .log-badge.update { background: rgba(99,102,241,0.1); color: var(--primary); }
-        .log-badge.comment { background: rgba(59,130,246,0.1); color: var(--info); }
-        .log-badge.restore { background: rgba(245,158,11,0.1); color: var(--warning); }
-        .log-badge.delete { background: rgba(239,68,68,0.1); color: var(--error); }
+        .log-badge.create { background: rgba(34,197,94,0.08); color: var(--success); }
+        .log-badge.update { background: rgba(79,70,229,0.08); color: var(--primary); }
+        .log-badge.comment { background: rgba(59,130,246,0.08); color: var(--info); }
+        .log-badge.restore { background: rgba(245,158,11,0.08); color: var(--warning); }
+        .log-badge.delete { background: rgba(239,68,68,0.08); color: var(--error); }
 
-        .old-text { color: var(--fg-tertiary); text-decoration: line-through; padding: 0 4px; }
-        .new-text { color: var(--success); font-weight: 600; padding: 0 4px; }
+        .old-text { color: var(--fg-tertiary); text-decoration: line-through; padding: 0 2px; }
+        .new-text { color: var(--success); font-weight: 600; padding: 0 2px; }
         
         .timeline-card-actions {
           display: flex;
-          gap: 12px;
-          margin-top: 6px;
+          gap: 10px;
+          margin-top: 4px;
         }
         .btn-compare {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          font-size: 11px;
-          padding: 4px 8px;
+          font-size: 10px;
+          padding: 3px 6px;
           border-radius: var(--radius-sm);
           color: var(--fg-secondary);
           cursor: pointer;
         }
         .btn-compare:hover {
           color: var(--fg-primary);
-          border-color: var(--border-hover);
         }
         .btn-restore-link {
           background: none;
           border: none;
           color: var(--primary);
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
           cursor: pointer;
-        }
-        .btn-restore-link:hover {
-          text-decoration: underline;
         }
         .timeline-empty {
           color: var(--fg-tertiary);
           font-style: italic;
           text-align: center;
-          padding: 40px;
+          padding: 24px;
         }
 
-        /* 5. TEAM CHAT MODULE STYLES */
+        /* 6. TEAM CHAT MODULE STYLES */
         .chat-layout {
           height: 100%;
           display: flex;
@@ -4169,48 +4208,42 @@ function ProjectWorkspaceContent() {
           background: var(--bg-secondary);
         }
         .chat-toolbar {
-          padding: 16px 24px;
+          padding: 12px 20px;
           border-bottom: 1px solid var(--border-color);
           display: flex;
           justify-content: space-between;
           align-items: center;
-          background: rgba(255,255,255,0.01);
         }
         .chat-heading {
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 800;
           color: var(--fg-primary);
         }
         .btn-ai-summary {
-          background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+          background: var(--primary);
           color: white;
           border: none;
-          padding: 6px 14px;
-          font-size: 12px;
-          font-weight: 700;
+          padding: 5px 10px;
+          font-size: 11px;
           border-radius: var(--radius-sm);
           cursor: pointer;
-          transition: transform 0.2s;
-        }
-        .btn-ai-summary:hover {
-          transform: translateY(-1px);
         }
         .chat-message-stream {
           flex-grow: 1;
           overflow-y: auto;
-          padding: 24px;
+          padding: 16px;
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 12px;
         }
         .chat-bubble-row {
           display: flex;
-          gap: 14px;
+          gap: 10px;
           align-items: flex-start;
         }
         .chat-avatar {
-          width: 36px;
-          height: 36px;
+          width: 32px;
+          height: 32px;
           border-radius: 50%;
           background: var(--bg-tertiary);
           flex-shrink: 0;
@@ -4218,58 +4251,55 @@ function ProjectWorkspaceContent() {
         .chat-message-content {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
           background: var(--bg-primary);
-          padding: 12px 16px;
+          padding: 10px 14px;
           border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
           border: 1px solid var(--border-color);
           max-width: 80%;
-          position: relative;
         }
         .chat-bubble-meta {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 16px;
-          margin-bottom: 2px;
+          gap: 12px;
         }
         .chat-bubble-meta strong {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-primary);
         }
         .chat-bubble-meta .timestamp {
-          font-size: 10px;
+          font-size: 9px;
           color: var(--fg-tertiary);
         }
         .chat-text-payload {
-          font-size: 13px;
+          font-size: 12px;
           color: var(--fg-primary);
-          line-height: 1.5;
+          line-height: 1.4;
           white-space: pre-wrap;
         }
         :global(.chat-mention) {
-          color: #818cf8 !important;
-          background: rgba(99, 102, 241, 0.1);
-          padding: 1px 4px;
-          border-radius: 3px;
+          color: var(--primary) !important;
+          background: var(--primary-glow);
+          padding: 1px 3px;
+          border-radius: 2px;
           font-weight: 700;
         }
         .chat-shared-files {
           display: flex;
           flex-direction: column;
           gap: 4px;
-          margin-top: 8px;
+          margin-top: 6px;
         }
         .file-attachment-card {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-sm);
-          padding: 8px 12px;
-          font-size: 11px;
+          padding: 6px 10px;
+          font-size: 10px;
           display: flex;
           justify-content: space-between;
           align-items: center;
-          gap: 12px;
         }
         .btn-dl {
           color: var(--primary);
@@ -4278,105 +4308,95 @@ function ProjectWorkspaceContent() {
 
         .chat-actions-row {
           display: flex;
-          gap: 14px;
+          gap: 10px;
           align-items: center;
-          margin-top: 8px;
-          border-top: 1px solid rgba(255,255,255,0.03);
-          padding-top: 8px;
+          margin-top: 6px;
+          border-top: 1px solid rgba(255,255,255,0.02);
+          padding-top: 6px;
         }
         .btn-reply-thread {
           background: none;
           border: none;
           color: var(--fg-secondary);
-          font-size: 11px;
+          font-size: 10px;
           cursor: pointer;
           font-weight: 600;
         }
-        .btn-reply-thread:hover {
-          color: var(--primary);
-        }
-        
         .reactions-picker {
           display: flex;
-          gap: 4px;
+          gap: 3px;
         }
         .btn-emoji {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          border-radius: 4px;
-          padding: 2px 6px;
-          font-size: 11px;
+          border-radius: 3px;
+          padding: 1px 5px;
+          font-size: 10px;
           cursor: pointer;
-          color: var(--fg-secondary);
-        }
-        .btn-emoji:hover {
-          background: var(--bg-tertiary);
         }
         .btn-emoji.active {
-          background: rgba(99, 102, 241, 0.08);
-          border-color: rgba(99, 102, 241, 0.25);
+          background: var(--primary-glow);
+          border-color: var(--primary);
           color: var(--primary);
         }
         .read-receipts-indicator {
           margin-left: auto;
           color: var(--primary);
-          font-size: 11px;
-          cursor: help;
+          font-size: 10px;
         }
         .receipts-count {
-          font-size: 9px;
+          font-size: 8px;
           font-weight: 700;
-          margin-left: 2px;
         }
 
         .chat-input-controls {
-          padding: 16px 24px;
+          padding: 12px 20px;
           border-top: 1px solid var(--border-color);
           background: rgba(255,255,255,0.01);
           position: relative;
         }
         .chat-typing-status {
           position: absolute;
-          top: -24px;
-          left: 24px;
-          font-size: 11px;
+          top: -20px;
+          left: 20px;
+          font-size: 10px;
           color: var(--info);
           font-style: italic;
         }
         .chat-queued-files {
           display: flex;
-          gap: 6px;
-          margin-bottom: 8px;
+          gap: 4px;
+          margin-bottom: 6px;
         }
         .queued-file-pill {
           background: var(--primary-glow);
-          border: 1px solid rgba(99, 102, 241, 0.2);
+          border: 1px solid rgba(79, 70, 229, 0.2);
           color: var(--primary);
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
-          padding: 2px 8px;
+          padding: 1px 6px;
           border-radius: var(--radius-sm);
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
         }
         .btn-q-del {
           border: none;
           background: none;
           color: inherit;
           cursor: pointer;
-          font-size: 9px;
+          font-size: 8px;
         }
         .chat-submission-form {
           display: flex;
-          gap: 12px;
+          gap: 8px;
           align-items: center;
         }
         .btn-attach-clip {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          width: 36px;
-          height: 36px;
+          width: 32px;
+          height: 32px;
           border-radius: 50%;
           cursor: pointer;
           display: flex;
@@ -4386,12 +4406,12 @@ function ProjectWorkspaceContent() {
         }
         .chat-submission-form input {
           flex-grow: 1;
-          padding: 10px 16px;
+          padding: 8px 12px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
         }
         .chat-submission-form input:focus {
@@ -4401,26 +4421,26 @@ function ProjectWorkspaceContent() {
           background: var(--primary);
           color: white;
           border: none;
-          padding: 10px 20px;
+          padding: 8px 14px;
           border-radius: var(--radius-md);
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 700;
           cursor: pointer;
         }
         .chat-empty {
           color: var(--fg-tertiary);
           font-style: italic;
-          padding: 40px;
+          padding: 24px;
         }
 
-        /* RIGHT DRAWER DETAILED DRAWER PANEL styling */
+        /* RIGHT DRAWER TASK DETAIL PANEL styling */
         .drawer-overlay {
           position: fixed;
           top: 0;
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0,0,0,0.5);
+          background: rgba(0,0,0,0.4);
           backdrop-filter: blur(4px);
           z-index: 1000;
           display: flex;
@@ -4428,7 +4448,7 @@ function ProjectWorkspaceContent() {
         }
         .drawer-panel {
           width: 100%;
-          max-width: 520px;
+          max-width: 480px;
           height: 100%;
           box-shadow: var(--shadow-lg);
           display: flex;
@@ -4437,7 +4457,7 @@ function ProjectWorkspaceContent() {
           background: var(--bg-secondary);
         }
         .drawer-header {
-          padding: 20px 24px;
+          padding: 16px 20px;
           border-bottom: 1px solid var(--border-color);
           display: flex;
           justify-content: space-between;
@@ -4445,44 +4465,35 @@ function ProjectWorkspaceContent() {
           flex-shrink: 0;
         }
         .drawer-task-id {
-          font-size: 11px;
-          font-weight: 700;
+          font-size: 10px;
+          font-weight: 800;
           color: var(--fg-tertiary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
-        .drawer-header-actions {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-        }
         .btn-action-delete {
           background: rgba(239,68,68,0.06);
-          border: 1px solid rgba(239,68,68,0.2);
+          border: 1px solid rgba(239,68,68,0.15);
           color: var(--error);
-          padding: 4px 8px;
+          padding: 3px 6px;
           border-radius: var(--radius-sm);
-          font-size: 11px;
+          font-size: 10px;
           cursor: pointer;
-        }
-        .btn-action-delete:hover {
-          background: rgba(239,68,68,0.12);
         }
         .btn-close-drawer {
           border: none;
           background: none;
           color: var(--fg-tertiary);
-          font-size: 18px;
+          font-size: 16px;
           cursor: pointer;
         }
 
         .editing-lock-alert {
-          background: rgba(245,158,11,0.08);
-          border-bottom: 1px solid rgba(245,158,11,0.2);
+          background: rgba(245,158,11,0.06);
+          border-bottom: 1px solid rgba(245,158,11,0.15);
           color: var(--warning);
-          font-size: 12px;
-          padding: 10px 24px;
-          font-weight: 500;
+          font-size: 11px;
+          padding: 8px 20px;
           text-align: center;
         }
 
@@ -4490,21 +4501,18 @@ function ProjectWorkspaceContent() {
         .drawer-subtabs-row {
           display: flex;
           border-bottom: 1px solid var(--border-color);
-          background: rgba(0,0,0,0.08);
+          background: rgba(0,0,0,0.05);
         }
         .drawer-subtabs-row .subtab-btn {
           flex: 1;
           background: none;
           border: none;
           color: var(--fg-secondary);
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 600;
-          padding: 12px;
+          padding: 10px;
           cursor: pointer;
           border-bottom: 2px solid transparent;
-        }
-        .drawer-subtabs-row .subtab-btn:hover {
-          color: var(--fg-primary);
         }
         .drawer-subtabs-row .subtab-btn.active {
           color: var(--primary);
@@ -4515,69 +4523,63 @@ function ProjectWorkspaceContent() {
         .drawer-body {
           flex-grow: 1;
           overflow-y: auto;
-          padding: 24px;
+          padding: 20px;
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          gap: 20px;
         }
         .drawer-section {
           display: flex;
           flex-direction: column;
         }
         .task-title-input {
-          font-size: 18px;
+          font-size: 16px;
           font-weight: 800;
           color: var(--fg-primary);
           background: none;
           border: none;
           border-bottom: 1px dashed var(--border-color);
-          padding: 4px 0;
-          margin-bottom: 16px;
+          padding: 2px 0;
+          margin-bottom: 12px;
           outline: none;
           width: 100%;
         }
-        .task-title-input:focus {
-          border-bottom-color: var(--primary);
-        }
         .section-label {
-          font-size: 10px;
-          font-weight: 700;
+          font-size: 9px;
+          font-weight: 800;
           color: var(--fg-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
-          margin-bottom: 8px;
+          margin-bottom: 6px;
         }
         .task-desc-textarea {
-          padding: 10px 12px;
+          padding: 8px 10px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
           resize: vertical;
-        }
-        .task-desc-textarea:focus {
-          border-color: var(--border-focus);
         }
 
         /* Attributes Grid */
         .attributes-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
-          padding: 16px;
+          gap: 12px;
+          padding: 12px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-lg);
+          border-radius: var(--radius-md);
         }
         .attr-item {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 4px;
         }
         .attr-label {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
           color: var(--fg-tertiary);
         }
@@ -4586,8 +4588,8 @@ function ProjectWorkspaceContent() {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
           color: var(--fg-primary);
-          font-size: 13px;
-          padding: 6px 10px;
+          font-size: 12px;
+          padding: 5px 8px;
           border-radius: var(--radius-sm);
           outline: none;
         }
@@ -4595,89 +4597,70 @@ function ProjectWorkspaceContent() {
         /* Labels row styles */
         .labels-selector-row {
           display: flex;
-          gap: 6px;
-          margin-bottom: 8px;
+          gap: 4px;
+          margin-bottom: 6px;
           flex-wrap: wrap;
         }
         .tag-add-pill {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          font-size: 11px;
-          padding: 4px 8px;
+          font-size: 10px;
+          padding: 3px 6px;
           border-radius: var(--radius-sm);
           cursor: pointer;
           color: var(--fg-secondary);
         }
-        .tag-add-pill:hover {
-          background: var(--bg-tertiary);
-        }
-        .active-labels-row,
-        .active-tags-row {
+        .active-labels-row {
           display: flex;
-          gap: 6px;
+          gap: 4px;
           flex-wrap: wrap;
-          margin-top: 6px;
+          margin-top: 4px;
         }
         .label-pill {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 600;
-          padding: 2px 8px;
-          border-radius: 4px;
+          padding: 1px 6px;
+          border-radius: 3px;
           display: flex;
           align-items: center;
-          gap: 6px;
+          gap: 4px;
         }
         .btn-tag-remove {
           border: none;
           background: none;
           color: inherit;
           cursor: pointer;
-          font-size: 9px;
-          padding: 2px;
-        }
-        .tags-add-form {
-          width: 100%;
+          font-size: 8px;
         }
         .tags-add-form input {
           width: 100%;
-          padding: 6px 10px;
+          padding: 5px 8px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 12px;
-          outline: none;
-        }
-        .tag-pill {
           font-size: 11px;
-          background: rgba(99,102,241,0.06);
-          border: 1px solid rgba(99,102,241,0.15);
-          color: var(--primary);
-          padding: 2px 8px;
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          gap: 6px;
+          outline: none;
         }
 
         /* Subtasks lists drawer styling */
         .subtasks-list {
           display: flex;
           flex-direction: column;
-          gap: 8px;
-          margin-bottom: 10px;
+          gap: 6px;
+          margin-bottom: 8px;
         }
         .subtask-row {
           display: flex;
           align-items: center;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          padding: 6px 12px;
+          padding: 5px 10px;
           border-radius: var(--radius-sm);
-          gap: 12px;
+          gap: 10px;
         }
         .subtask-title {
-          font-size: 12px;
+          font-size: 11px;
           flex-grow: 1;
         }
         .subtask-title.completed {
@@ -4685,7 +4668,7 @@ function ProjectWorkspaceContent() {
           color: var(--fg-tertiary);
         }
         .status-dot {
-          font-size: 10px;
+          font-size: 8px;
         }
         .status-dot.todo { color: var(--info); }
         .status-dot.in_progress { color: var(--primary); }
@@ -4694,54 +4677,54 @@ function ProjectWorkspaceContent() {
         .subtask-status-select {
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          font-size: 11px;
-          padding: 2px 6px;
+          font-size: 10px;
+          padding: 1px 4px;
           color: var(--fg-primary);
-          border-radius: 3px;
+          border-radius: 2px;
         }
         .subtask-add-form input {
           width: 100%;
-          padding: 6px 10px;
+          padding: 5px 8px;
           background: var(--bg-primary);
           border: 1px dashed var(--border-color);
           border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 12px;
+          font-size: 11px;
           outline: none;
         }
 
         /* Checklists list drawer styling */
         .checklist-add-form input {
           width: 100%;
-          padding: 8px 10px;
+          padding: 6px 10px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
+          border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 12px;
+          font-size: 11px;
           outline: none;
-          margin-bottom: 12px;
+          margin-bottom: 8px;
         }
         .checklist-list {
           display: flex;
           flex-direction: column;
-          gap: 6px;
+          gap: 4px;
         }
         .checklist-item {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 8px 12px;
+          padding: 6px 10px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
+          border-radius: var(--radius-sm);
         }
         .checklist-label {
           display: flex;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
           cursor: pointer;
-          font-size: 12px;
+          font-size: 11px;
         }
         .checklist-label span.completed {
           text-decoration: line-through;
@@ -4757,16 +4740,16 @@ function ProjectWorkspaceContent() {
         /* Dependency styles */
         .dependency-add-controls {
           display: flex;
-          gap: 8px;
-          margin-bottom: 12px;
+          gap: 6px;
+          margin-bottom: 8px;
         }
         .dep-select {
           flex-grow: 1;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           color: var(--fg-primary);
-          font-size: 12px;
-          padding: 6px 10px;
+          font-size: 11px;
+          padding: 5px 8px;
           border-radius: var(--radius-sm);
           outline: none;
         }
@@ -4774,203 +4757,170 @@ function ProjectWorkspaceContent() {
           background: var(--primary);
           color: white;
           border: none;
-          padding: 6px 12px;
+          padding: 5px 10px;
           border-radius: var(--radius-sm);
           cursor: pointer;
-          font-size: 12px;
+          font-size: 11px;
         }
         .dependencies-list {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 8px;
         }
         .dependency-group {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-          padding: 10px;
+          border-radius: var(--radius-sm);
+          padding: 8px;
         }
         .dep-title {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
         }
         .dep-item {
           display: flex;
           justify-content: space-between;
-          font-size: 12px;
-          padding: 4px 0;
-          border-bottom: 1px solid var(--bg-secondary);
+          font-size: 11px;
+          padding: 2px 0;
         }
         .btn-unlink {
           border: none;
           background: none;
           color: var(--error);
-          font-size: 10px;
+          font-size: 9px;
           cursor: pointer;
-        }
-
-        /* Simulated attachments */
-        .attachments-list {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .attachment-row {
-          display: flex;
-          justify-content: space-between;
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          padding: 8px 12px;
-          border-radius: var(--radius-sm);
-          font-size: 12px;
-        }
-        .btn-download {
-          color: var(--primary);
-          font-weight: 600;
-        }
-        .btn-upload-mock {
-          width: 100%;
-          padding: 6px;
-          background: none;
-          border: 1px dashed var(--border-color);
-          color: var(--fg-secondary);
-          font-size: 12px;
-          cursor: pointer;
-          border-radius: var(--radius-sm);
         }
 
         /* Comments timeline */
         .comments-stack {
           display: flex;
           flex-direction: column;
-          gap: 14px;
-          max-height: 240px;
+          gap: 10px;
+          max-height: 200px;
           overflow-y: auto;
-          margin-bottom: 14px;
+          margin-bottom: 10px;
           background: var(--bg-primary);
-          padding: 12px;
+          padding: 10px;
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
         }
         .comment-bubble {
           display: flex;
-          gap: 10px;
+          gap: 8px;
         }
         .comment-avatar {
-          width: 28px;
-          height: 28px;
+          width: 24px;
+          height: 24px;
           border-radius: 50%;
           background: var(--bg-secondary);
         }
         .comment-content {
           display: flex;
           flex-direction: column;
-          gap: 4px;
+          gap: 3px;
           background: var(--bg-secondary);
-          padding: 8px 12px;
+          padding: 6px 10px;
           border-radius: var(--radius-md);
           flex-grow: 1;
         }
         .comment-author-row {
           display: flex;
           justify-content: space-between;
-          font-size: 10px;
+          font-size: 9px;
           color: var(--fg-tertiary);
         }
         .comment-text {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-primary);
           line-height: 1.4;
         }
 
         .typing-indicator {
-          font-size: 11px;
+          font-size: 10px;
           color: var(--info);
-          margin-bottom: 10px;
+          margin-bottom: 8px;
           font-style: italic;
-          padding-left: 6px;
         }
 
         .comment-post-form {
           display: flex;
-          gap: 8px;
+          gap: 6px;
         }
         .comment-post-form input {
           flex-grow: 1;
-          padding: 8px 12px;
+          padding: 6px 10px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
+          border-radius: var(--radius-sm);
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
         }
         .comment-post-form button {
           background: var(--primary);
           color: white;
           border: none;
-          padding: 0 16px;
-          border-radius: var(--radius-md);
-          font-size: 13px;
+          padding: 0 12px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
           font-weight: 600;
           cursor: pointer;
         }
         .no-comments {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-tertiary);
           font-style: italic;
           text-align: center;
-          padding: 16px;
+          padding: 12px;
         }
 
         /* Drawer History Tab Revisions log item styles */
         .task-logs-feed {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
         }
         .task-log-item {
-          padding: 12px;
+          padding: 10px;
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
         }
         .log-header {
           display: flex;
-          gap: 10px;
+          gap: 8px;
           align-items: center;
         }
         .log-avatar {
-          width: 24px;
-          height: 24px;
+          width: 20px;
+          height: 20px;
           border-radius: 50%;
           background: var(--bg-secondary);
         }
         .log-header strong {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-primary);
-          display: block;
         }
         .log-header .timestamp {
-          font-size: 10px;
+          font-size: 9px;
           color: var(--fg-tertiary);
         }
         .log-text {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-primary);
           line-height: 1.4;
         }
         .log-actions {
           display: flex;
-          gap: 12px;
+          gap: 10px;
           align-items: center;
         }
 
-        /* Floating glassmorphic Undo toast banner */
+        /* Floating Undo banner */
         .global-undo-banner {
           position: fixed;
           bottom: 24px;
@@ -4979,66 +4929,63 @@ function ProjectWorkspaceContent() {
           z-index: 2000;
           display: flex;
           align-items: center;
-          gap: 16px;
-          padding: 12px 24px;
-          border-radius: var(--radius-lg);
-          border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(15, 23, 42, 0.85);
+          gap: 12px;
+          padding: 10px 20px;
+          border-radius: var(--radius-md);
+          border: 1px solid rgba(255,255,255,0.05);
+          background: #18181b;
           box-shadow: var(--shadow-lg);
           color: white;
-          font-size: 13px;
+          font-size: 12px;
         }
         .btn-undo-trigger {
           background: var(--primary);
           color: white;
           border: none;
           font-weight: 700;
-          font-size: 12px;
-          padding: 6px 12px;
+          font-size: 11px;
+          padding: 4px 8px;
           border-radius: var(--radius-sm);
           cursor: pointer;
-        }
-        .btn-undo-trigger:hover {
-          background: #818cf8;
         }
         .btn-undo-dismiss {
           background: none;
           border: none;
           color: var(--fg-tertiary);
           cursor: pointer;
-          font-size: 12px;
+          font-size: 11px;
         }
 
         /* Thread drawer and timeline replies styling */
         .thread-drawer-panel {
-          max-width: 480px;
+          max-width: 440px;
         }
         .thread-parent-message-card {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
-          padding: 16px;
+          padding: 12px;
         }
         .parent-p {
-          font-size: 14px;
-          margin-top: 6px;
+          font-size: 13px;
+          margin-top: 4px;
         }
         .replies-timeline-stack {
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           flex-grow: 1;
           overflow-y: auto;
-          margin-top: 10px;
+          margin-top: 8px;
         }
         .reply-bubble-item {
           display: flex;
-          gap: 10px;
+          gap: 8px;
           align-items: flex-start;
         }
         .reply-avatar-sm {
-          width: 28px;
-          height: 28px;
+          width: 24px;
+          height: 24px;
           border-radius: 50%;
           background: var(--bg-tertiary);
         }
@@ -5046,83 +4993,83 @@ function ProjectWorkspaceContent() {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
-          padding: 10px 14px;
+          padding: 8px 12px;
           flex-grow: 1;
         }
 
         .thread-inputs {
-          padding: 12px 16px;
+          padding: 10px 14px;
         }
 
         /* AI SUMMARY modal cards */
         .ai-summary-card {
-          max-width: 560px;
+          max-width: 520px;
         }
         .ai-summary-modal-body {
-          max-height: 400px;
+          max-height: 360px;
           overflow-y: auto;
         }
         .ai-summary-pane-content {
-          background: rgba(99, 102, 241, 0.04);
-          border: 1px solid rgba(99, 102, 241, 0.15);
+          background: rgba(79, 70, 229, 0.03);
+          border: 1px solid rgba(79, 70, 229, 0.15);
           border-radius: var(--radius-md);
-          padding: 20px;
+          padding: 16px;
           color: var(--fg-primary);
           line-height: 1.6;
         }
         .sum-h3 {
-          font-size: 14px;
+          font-size: 13px;
           font-weight: 800;
           color: var(--primary);
-          margin-bottom: 12px;
-          border-bottom: 1px solid rgba(99, 102, 241, 0.15);
-          padding-bottom: 6px;
+          margin-bottom: 10px;
+          border-bottom: 1px solid rgba(79, 70, 229, 0.15);
+          padding-bottom: 4px;
         }
         .sum-strong {
           color: var(--fg-primary);
-          font-size: 13px;
+          font-size: 12px;
           display: block;
-          margin-top: 10px;
+          margin-top: 8px;
         }
         .sum-p {
-          font-size: 13px;
+          font-size: 12px;
           color: var(--fg-secondary);
-          margin: 6px 0;
+          margin: 4px 0;
         }
 
         /* COMPARATIVE SPLIT AND WORD DIFF MODAL */
         .diff-modal {
-          max-width: 720px;
+          max-width: 680px;
         }
         .diff-modal-body {
           display: flex;
           flex-direction: column;
-          gap: 20px;
-          max-height: 480px;
+          gap: 16px;
+          max-height: 400px;
           overflow-y: auto;
         }
         .split-compare-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
+          gap: 12px;
         }
         .compare-pane {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
-          padding: 14px;
+          padding: 12px;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
         }
         .compare-pane h3 {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
           color: var(--fg-tertiary);
           text-transform: uppercase;
         }
         .pane-content {
-          font-size: 12px;
+          font-size: 11px;
           color: var(--fg-primary);
           line-height: 1.5;
           white-space: pre-wrap;
@@ -5131,184 +5078,175 @@ function ProjectWorkspaceContent() {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
-          padding: 14px;
+          padding: 12px;
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
         }
         .word-diff-section h3 {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
           color: var(--fg-tertiary);
           text-transform: uppercase;
         }
         .word-diff-highlight-pane {
-          font-size: 13px;
+          font-size: 12px;
           color: var(--fg-primary);
-          line-height: 1.6;
+          line-height: 1.5;
           white-space: pre-wrap;
           background: var(--bg-secondary);
-          padding: 12px;
+          padding: 10px;
           border-radius: var(--radius-sm);
           border: 1px solid var(--border-color);
         }
         :global(.diff-added) {
-          background: rgba(16,185,129,0.18);
+          background: rgba(34,197,94,0.15);
           color: var(--success);
           text-decoration: none;
           font-weight: 600;
-          padding: 1px 3px;
+          padding: 1px 2px;
           border-radius: 2px;
         }
         :global(.diff-removed) {
-          background: rgba(239,68,68,0.18);
+          background: rgba(239,68,68,0.15);
           color: var(--error);
           text-decoration: line-through;
-          padding: 1px 3px;
+          padding: 1px 2px;
           border-radius: 2px;
         }
 
-        /* PROJECT EDIT SETTINGS MODAL */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0,0,0,0.5);
-          backdrop-filter: blur(4px);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
+        /* PROJECT CONFIG SETTINGS IN TAB */
+        .project-settings-tab-layout {
+          height: 100%;
+          overflow-y: auto;
+          padding-bottom: 24px;
         }
-        .modal-card {
-          width: 100%;
-          max-width: 480px;
-          padding: 32px;
+        .settings-wrapper {
+          max-width: 600px;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
           border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-lg);
+          padding: 24px;
+        }
+        .settings-form {
           display: flex;
           flex-direction: column;
-          gap: 24px;
         }
-        .modal-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .btn-close-modal {
-          border: none;
-          background: none;
-          color: var(--fg-tertiary);
-          font-size: 18px;
-          cursor: pointer;
-        }
-        .modal-form {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
-        }
-        .modal-form label {
+        .settings-form label {
           font-size: 10px;
           font-weight: 700;
-          color: var(--fg-secondary);
           text-transform: uppercase;
-          letter-spacing: 0.05em;
+          color: var(--fg-secondary);
+          margin-bottom: 6px;
         }
-        .modal-form input,
-        .modal-form textarea {
+        .settings-form input,
+        .settings-form textarea {
           width: 100%;
           padding: 10px 14px;
-          background: var(--bg-secondary);
+          background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
           color: var(--fg-primary);
-          font-size: 14px;
+          font-size: 13px;
           outline: none;
         }
-        .actions-buttons-column {
+        .settings-destructive-actions {
           display: flex;
           flex-direction: column;
           gap: 10px;
           margin-top: 10px;
         }
-        .btn-action {
-          width: 100%;
-          padding: 10px;
-          border-radius: var(--radius-sm);
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
+        .btn-action-dest {
           text-align: left;
+          background: var(--bg-primary);
           border: 1px solid var(--border-color);
-          background: var(--bg-secondary);
+          border-radius: var(--radius-sm);
+          padding: 10px 14px;
+          font-size: 12px;
+          font-weight: 600;
           color: var(--fg-secondary);
+          cursor: pointer;
         }
-        .btn-action:hover {
-          background-color: var(--bg-tertiary);
+        .btn-action-dest:hover {
+          background: var(--bg-tertiary);
           color: var(--fg-primary);
         }
-        .btn-action.delete {
+        .btn-action-dest.delete {
           color: var(--error);
-          border-color: rgba(239, 68, 68, 0.15);
-        }
-        .btn-action.delete:hover {
-          background: rgba(239, 68, 68, 0.05);
-        }
-        .modal-actions-footer {
-          display: flex;
-          justify-content: flex-end;
-          gap: 12px;
-        }
-        
-        .text-red { color: var(--error); }
-        .text-green { color: var(--success); }
-
-        /* Animation utilities */
-        .animate-pulse {
-          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: .5; }
+          border-color: rgba(239,68,68,0.15);
         }
 
-        .animate-slide-up {
-          animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        /* PREMIUM FLOATING AI ASSISTANT CHAT PANEL (Linear style minimized/maximized) */
+        .floating-ai-wrapper {
+          position: fixed;
+          bottom: 24px;
+          right: 24px;
+          z-index: 2500;
         }
-        @keyframes slideUp {
-          from { transform: translate(-50%, 48px); opacity: 0; }
-          to { transform: translate(-50%, 0); opacity: 1; }
+        .btn-floating-ai-trigger {
+          background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+          color: white;
+          border: none;
+          font-weight: 700;
+          font-size: 12px;
+          padding: 12px 20px;
+          border-radius: var(--radius-full);
+          cursor: pointer;
+          box-shadow: var(--shadow-lg);
         }
-
-        /* AI Assistant Coprocessor drawer */
-        .ai-chat-stream {
+        .ai-coprocessor-card {
+          width: 320px;
+          height: 400px;
+          border-radius: var(--radius-lg);
+          border: 1px solid rgba(79, 70, 229, 0.2);
+          box-shadow: var(--shadow-lg);
+          background: var(--bg-secondary);
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          overflow: hidden;
+        }
+        .ai-card-header {
+          padding: 10px 14px;
+          border-bottom: 1px solid var(--border-color);
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: rgba(0,0,0,0.05);
+        }
+        .ai-card-header .title {
+          font-size: 11px;
+          font-weight: 800;
+          color: var(--primary);
+          text-transform: uppercase;
+        }
+        .btn-minimize-ai {
+          background: none;
+          border: none;
+          color: var(--fg-tertiary);
+          cursor: pointer;
+          font-size: 12px;
+        }
+        .ai-chat-body {
           flex-grow: 1;
           overflow-y: auto;
-          padding: 12px 0;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+        }
+        .ai-messages-stream {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          max-height: 240px;
+          overflow-y: auto;
         }
         .ai-bubble-row {
           display: flex;
           width: 100%;
-          margin: 4px 0;
         }
-        .ai-bubble-row.user {
-          justify-content: flex-end;
-        }
-        .ai-bubble-row.ai {
-          justify-content: flex-start;
-        }
-        .ai-bubble-content {
-          max-width: 85%;
-          padding: 10px 14px;
-          border-radius: var(--radius-md);
-          font-size: 13px;
-          line-height: 1.5;
-        }
+        .ai-bubble-row.user { justify-content: flex-end; }
+        .ai-bubble-row.ai { justify-content: flex-start; }
         .ai-bubble-row.user .ai-bubble-content {
           background: var(--primary);
           color: white;
@@ -5320,9 +5258,66 @@ function ProjectWorkspaceContent() {
           color: var(--fg-primary);
           border-radius: var(--radius-md) var(--radius-md) var(--radius-md) 0;
         }
+        .ai-bubble-content {
+          max-width: 85%;
+          padding: 8px 12px;
+          font-size: 11px;
+          line-height: 1.4;
+        }
         .btn-ai-action-execute {
+          background: var(--success);
+          color: white;
+          border: none;
+          font-size: 9px;
+          font-weight: 700;
+          padding: 4px 8px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          width: 100%;
+          margin-top: 6px;
+        }
+        .ai-suggestions-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
           margin-top: 10px;
-          background: linear-gradient(135deg, var(--success) 0%, #10b981 100%);
+          border-top: 1px solid var(--border-color);
+          padding-top: 10px;
+        }
+        .ai-suggestion-badge {
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          color: var(--fg-secondary);
+          font-size: 9px;
+          font-weight: 600;
+          padding: 3px 6px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        .ai-suggestion-badge:hover {
+          border-color: var(--border-hover);
+        }
+        .ai-card-footer {
+          padding: 8px 12px;
+          border-top: 1px solid var(--border-color);
+          background: rgba(0,0,0,0.05);
+        }
+        .ai-input-form {
+          display: flex;
+          gap: 6px;
+        }
+        .ai-input-form input {
+          flex-grow: 1;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-sm);
+          padding: 6px 10px;
+          color: var(--fg-primary);
+          font-size: 11px;
+          outline: none;
+        }
+        .ai-input-form button {
+          background: var(--primary);
           color: white;
           border: none;
           font-weight: 700;
@@ -5330,519 +5325,137 @@ function ProjectWorkspaceContent() {
           padding: 6px 12px;
           border-radius: var(--radius-sm);
           cursor: pointer;
-          width: 100%;
-          text-align: center;
-        }
-        .ai-suggestions-row {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 6px;
-          border-top: 1px solid var(--border-color);
-          padding-top: 12px;
-          margin-top: auto;
-        }
-        .suggestion-pill {
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          color: var(--fg-secondary);
-          font-size: 11px;
-          font-weight: 600;
-          padding: 4px 10px;
-          border-radius: var(--radius-sm);
-          cursor: pointer;
-        }
-        .suggestion-pill:hover {
-          color: var(--fg-primary);
-          border-color: var(--border-hover);
-          background: var(--bg-secondary);
-        }
-        .ai-body {
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          height: 100%;
         }
 
-        /* DOCUMENT AND FILES CENTER STYLES */
-        .files-layout {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          border-radius: var(--radius-lg);
-          overflow: hidden;
-          background: var(--bg-secondary);
-        }
-        .files-toolbar {
-          padding: 16px 24px;
-          border-bottom: 1px solid var(--border-color);
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: rgba(255,255,255,0.01);
-        }
-        .breadcrumbs-bar {
-          display: flex;
-          align-items: center;
-          font-size: 13px;
-          color: var(--fg-secondary);
-          font-weight: 600;
-        }
-        .crumb-root {
-          cursor: pointer;
-          color: var(--primary);
-        }
-        .crumb-item {
-          cursor: pointer;
-          color: var(--fg-primary);
-        }
-        .crumb-item:hover {
-          text-decoration: underline;
-        }
-        .files-toolbar-actions {
-          display: flex;
-          gap: 8px;
-        }
-
-        .files-dnd-zone {
-          border: 2px dashed var(--border-color);
-          border-radius: var(--radius-md);
-          margin: 16px 24px 8px 24px;
-          padding: 20px;
-          text-align: center;
-          transition: background-color var(--transition-fast), border-color var(--transition-fast);
-          background: rgba(255,255,255,0.005);
-        }
-        .files-dnd-zone.dragging {
-          background: var(--primary-glow);
-          border-color: var(--primary);
-        }
-        .dnd-prompt {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-        }
-        .dnd-icon {
-          font-size: 28px;
-        }
-        .dnd-prompt p {
-          font-size: 11px;
-          color: var(--fg-secondary);
-        }
-
-        .files-grid-container {
-          flex-grow: 1;
-          overflow-y: auto;
-          padding: 16px 24px 24px 24px;
-        }
-        .folders-files-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-          gap: 16px;
-        }
-        .folder-item-card,
-        .file-item-card {
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-          padding: 16px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          gap: 8px;
-          cursor: pointer;
-          transition: transform 0.2s, border-color var(--transition-fast);
-        }
-        .folder-item-card:hover,
-        .file-item-card:hover {
-          transform: translateY(-2px);
-          border-color: var(--border-hover);
-        }
-        .grid-icon {
-          font-size: 32px;
-        }
-        .item-name {
-          font-size: 12px;
-          color: var(--fg-primary);
-          word-break: break-all;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        .item-meta {
-          font-size: 10px;
-          color: var(--fg-tertiary);
-        }
-        .files-empty {
-          color: var(--fg-tertiary);
-          font-style: italic;
-          padding: 40px;
-        }
-
-        /* Document previews viewers */
+        /* Document previews */
         .simulated-pdf-viewer {
           background: #334155;
           border-radius: var(--radius-md);
-          padding: 24px;
+          padding: 16px;
           text-align: center;
-          min-height: 240px;
+          min-height: 180px;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          border: 1px solid rgba(255,255,255,0.05);
+          color: white;
         }
-        .pdf-page-canvas {
-          flex-grow: 1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          color: #f8fafc;
-        }
-        .pdf-page-canvas h4 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-        .pdf-page-mark { font-size: 11px; color: #cbd5e1; }
+        .pdf-page-canvas h4 { font-size: 12px; }
+        .pdf-page-mark { font-size: 10px; color: #cbd5e1; }
         .pdf-page-controls {
           display: flex;
           justify-content: center;
           align-items: center;
-          gap: 14px;
-          margin-top: 16px;
-          color: white;
-          font-size: 12px;
+          gap: 10px;
+          font-size: 11px;
         }
-        
         .simulated-img-viewer {
           background: #0f172a;
           border-radius: var(--radius-md);
-          padding: 12px;
+          padding: 8px;
           display: flex;
           justify-content: center;
-          border: 1px solid var(--border-color);
         }
         .preview-asset-img {
           max-width: 100%;
-          max-height: 240px;
+          max-height: 180px;
           object-fit: contain;
-          border-radius: 4px;
         }
-
         .simulated-csv-viewer {
           background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
-          padding: 40px 12px;
+          padding: 30px 10px;
           text-align: center;
         }
 
-        /* 7. ANALYTICS INTERACTIVE DASHBOARD STYLES */
-        .analytics-layout {
-          height: 100%;
-          overflow-y: auto;
-          padding-bottom: 32px;
-        }
+        /* Stats visual styles */
         .analytics-dashboard-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-          gap: 20px;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 16px;
         }
         .analytics-card {
-          padding: 24px;
+          padding: 16px;
           border-radius: var(--radius-lg);
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
           display: flex;
           flex-direction: column;
-          gap: 16px;
+          gap: 12px;
+        }
+        .section-label {
+          font-size: 9px;
+          font-weight: 800;
+          color: var(--fg-tertiary);
+          text-transform: uppercase;
         }
         .health-circle-wrapper {
           display: flex;
           align-items: center;
-          gap: 24px;
-          padding: 10px 0;
+          gap: 16px;
         }
         .health-label-under {
           display: flex;
           flex-direction: column;
-          gap: 4px;
-        }
-        .health-label-under strong {
-          font-size: 14px;
-          color: var(--fg-primary);
+          gap: 2px;
         }
         .health-desc {
-          font-size: 12px;
+          font-size: 10px;
           font-weight: 700;
         }
-
         .mini-stats-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 12px;
+          gap: 8px;
           border-top: 1px solid var(--border-color);
-          padding-top: 16px;
-          margin-top: 8px;
+          padding-top: 10px;
         }
         .mini-stat-card {
           background: var(--bg-primary);
-          padding: 10px 14px;
+          padding: 8px;
           border-radius: var(--radius-sm);
           border: 1px solid var(--border-color);
           display: flex;
           flex-direction: column;
-          gap: 4px;
         }
         .stat-label {
-          font-size: 10px;
+          font-size: 9px;
           color: var(--fg-tertiary);
-          font-weight: 700;
           text-transform: uppercase;
         }
-
         .ai-report-box {
           background: var(--bg-primary);
-          padding: 16px;
+          padding: 12px;
           border-radius: var(--radius-md);
-          border-left: 4px solid var(--primary);
+          border-left: 3px solid var(--primary);
         }
-        .ai-report-box.alert-box {
-          border-left-color: var(--warning);
-        }
-        .ai-report-box h3 {
-          font-size: 12px;
-          font-weight: 800;
-          color: var(--fg-primary);
-          margin-bottom: 10px;
-        }
-        .ai-report-box ul {
-          padding-left: 16px;
-          font-size: 12px;
-          color: var(--fg-secondary);
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .risk-item {
-          color: var(--fg-secondary);
-        }
+        .ai-report-box.alert-box { border-left-color: var(--warning); }
+        .ai-report-box h3 { font-size: 11px; margin-bottom: 6px; }
+        .ai-report-box ul { padding-left: 12px; font-size: 11px; display: flex; flex-direction: column; gap: 4px; }
+        .chart-container { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 12px; }
+        .chart-legends-row { display: flex; gap: 10px; justify-content: center; font-size: 10px; }
+        .legend-item { display: flex; align-items: center; gap: 4px; color: var(--fg-secondary); }
+        .legend-dot { width: 10px; height: 3px; border-radius: 1px; }
+        .legend-dot.dashed { border-bottom: 2px dashed var(--fg-tertiary); background: none; }
+        .chart-tooltip { position: absolute; background: rgba(15,23,42,0.95); color: white; padding: 3px 6px; border-radius: 3px; font-size: 9px; pointer-events: none; z-index: 10; transform: translate(-50%, -100%); white-space: nowrap; }
+        .workload-list { display: flex; flex-direction: column; gap: 10px; }
+        .workload-row-bar { display: flex; flex-direction: column; gap: 4px; }
+        .workload-labels-between { display: flex; justify-content: space-between; font-size: 11px; }
+        .workload-track { height: 6px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 3px; overflow: hidden; }
+        .workload-fill { height: 100%; border-radius: 3px; }
+        .attendance-heatmap-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .heatmap-box { height: 28px; border-radius: 3px; display: flex; align-items: center; justify-content: center; cursor: help; }
+        .heatmap-date-label { font-size: 8px; color: white; font-weight: 700; }
 
-        /* SVG interactive lines graphs charts styling */
-        .chart-container {
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-md);
-          padding: 16px;
-        }
-        .chart-legends-row {
-          display: flex;
-          gap: 16px;
-          justify-content: center;
-          font-size: 11px;
-        }
-        .legend-item {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: var(--fg-secondary);
-        }
-        .legend-dot {
-          width: 12px;
-          height: 3px;
-          border-radius: 2px;
-        }
-        .legend-dot.dashed {
-          border-bottom: 2px dashed var(--fg-tertiary);
-          background: none;
-        }
-
-        .chart-tooltip {
-          position: absolute;
-          background: rgba(15,23,42,0.95);
-          color: white;
-          padding: 4px 8px;
-          border-radius: 4px;
-          font-size: 10px;
-          pointer-events: none;
-          box-shadow: var(--shadow-md);
-          z-index: 10;
-          transform: translate(-50%, -100%);
-          white-space: nowrap;
-          border: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .workload-list {
-          display: flex;
-          flex-direction: column;
-          gap: 14px;
-        }
-        .workload-row-bar {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .workload-labels-between {
-          display: flex;
-          justify-content: space-between;
-          font-size: 12px;
-          color: var(--fg-primary);
-        }
-        .workload-track {
-          height: 8px;
-          background: var(--bg-tertiary);
-          border: 1px solid var(--border-color);
-          border-radius: 4px;
-          overflow: hidden;
-        }
-        .workload-fill {
-          height: 100%;
-          border-radius: 4px;
-        }
-
-        /* Attendance daily heat map styling */
-        .attendance-heatmap-row {
-          display: grid;
-          grid-template-columns: repeat(7, 1fr);
-          gap: 6px;
-        }
-        .heatmap-box {
-          height: 36px;
-          border-radius: 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          cursor: help;
-          position: relative;
-        }
-        .heatmap-date-label {
-          font-size: 9px;
-          color: white;
-          font-weight: 700;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.6);
-        }
-        .heatmap-legends-row {
-          display: flex;
-          gap: 4px;
-          justify-content: flex-end;
-          align-items: center;
-          font-size: 10px;
-          color: var(--fg-secondary);
-        }
-        .heatmap-legend-cell {
-          width: 10px;
-          height: 10px;
-          border-radius: 2px;
-        }
-        .heatmap-legend-cell.level-0 { background: var(--bg-tertiary); }
-        .heatmap-legend-cell.level-1 { background: rgba(16,185,129,0.2); }
-        .heatmap-legend-cell.level-2 { background: rgba(16,185,129,0.4); }
-        .heatmap-legend-cell.level-3 { background: rgba(16,185,129,0.7); }
-        .heatmap-legend-cell.level-4 { background: rgba(16,185,129,1.0); }
-
-        .leaderboard-stack {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .leaderboard-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 8px 14px;
-          background: var(--bg-primary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-sm);
-        }
-        .rank-badge {
-          font-size: 10px;
-          font-weight: 800;
-          color: var(--primary);
-          background: var(--primary-glow);
-          padding: 2px 6px;
-          border-radius: 3px;
-        }
-        .member-name {
-          font-size: 12px;
-          color: var(--fg-primary);
-          flex-grow: 1;
-        }
-        .actions-count {
-          font-size: 11px;
-          color: var(--fg-tertiary);
-          font-weight: 600;
-        }
-
-        /* Command Palette dialog overlay */
-        .command-palette-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.6);
-          backdrop-filter: blur(4px);
-          z-index: 3000;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          padding-top: 100px;
-        }
-        .command-palette-card {
-          width: 100%;
-          max-width: 560px;
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          border-radius: var(--radius-lg);
-          box-shadow: var(--shadow-lg);
-          overflow: hidden;
-        }
-        .command-input {
-          width: 100%;
-          padding: 16px 20px;
-          background: var(--bg-primary);
-          border: none;
-          border-bottom: 1px solid var(--border-color);
-          color: var(--fg-primary);
-          font-size: 14px;
-          outline: none;
-        }
-        .command-list {
-          max-height: 300px;
-          overflow-y: auto;
-          padding: 8px;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        .command-item {
-          padding: 10px 16px;
-          border-radius: var(--radius-sm);
-          color: var(--fg-secondary);
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background-color var(--transition-fast), color var(--transition-fast);
-          text-align: left;
-          background: none;
-          border: none;
-          width: 100%;
-        }
-        .command-item:hover {
-          background: var(--primary-glow);
-          color: var(--primary);
-        }
-        .command-palette-footer {
-          padding: 10px 16px;
-          border-top: 1px solid var(--border-color);
-          background: rgba(0,0,0,0.05);
-          display: flex;
-          justify-content: space-between;
-          font-size: 11px;
-          color: var(--fg-tertiary);
-        }
+        /* Animation utilities */
+        .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes slideUp { from { transform: translate(-50%, 32px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
 
         @media (max-width: 768px) {
           .workspace-container {
-            padding: 16px;
+            padding: 12px;
             height: auto;
             overflow-y: auto;
           }
@@ -5876,7 +5489,7 @@ export default function ProjectWorkspacePage() {
           .spinner {
             width: 32px;
             height: 32px;
-            border: 3px solid rgba(99, 102, 241, 0.2);
+            border: 3px solid rgba(79, 70, 229, 0.2);
             border-radius: 50%;
             border-top-color: var(--primary);
             animation: spin 0.8s linear infinite;

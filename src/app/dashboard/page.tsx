@@ -2,75 +2,69 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 
 export default function DashboardPage() {
   const { activeWorkspace, user } = useAuth();
   const { addToast } = useToast();
+  const router = useRouter();
 
   const [projects, setProjects] = useState<any[]>([]);
+  const [allTasks, setAllTasks] = useState<any[]>([]);
+  const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Search & Filter & Sort State
-  const [search, setSearch] = useState('');
-  const [filterTab, setFilterTab] = useState<'all' | 'active' | 'favorites' | 'archived'>('active');
-  const [sortBy, setSortBy] = useState<'updated' | 'progress' | 'name'>('updated');
-
-  // Modal State
+  // Modal State for Project Creation
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newProjName, setNewProjName] = useState('');
   const [newProjDesc, setNewProjDesc] = useState('');
   const [newProjStatus, setNewProjStatus] = useState('todo');
   const [isCreating, setIsCreating] = useState(false);
 
-  const fetchProjects = async () => {
+  const fetchWorkspaceData = async () => {
     if (!activeWorkspace) return;
     try {
       setIsLoading(true);
-      const res = await fetch(`/api/dashboard/projects?workspaceId=${activeWorkspace.id}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setProjects(data);
+      
+      // 1. Fetch active workspace projects
+      const projRes = await fetch(`/api/dashboard/projects?workspaceId=${activeWorkspace.id}`);
+      const projectsList = await projRes.json();
+      if (Array.isArray(projectsList)) {
+        setProjects(projectsList);
+
+        // 2. Fetch tasks across all projects in parallel
+        const tasksPromises = projectsList.map((p) =>
+          fetch(`/api/dashboard/projects/${p.id}/tasks`).then((res) => res.json())
+        );
+        const tasksResults = await Promise.all(tasksPromises);
+        const mergedTasks = tasksResults.flat().filter((t) => t && t.id);
+        setAllTasks(mergedTasks);
+
+        // 3. Fetch activity logs across projects in parallel
+        const logsPromises = projectsList.map((p) =>
+          fetch(`/api/dashboard/projects/${p.id}/history`).then((res) => res.json())
+        );
+        const logsResults = await Promise.all(logsPromises);
+        const mergedLogs = logsResults
+          .flat()
+          .filter((l) => l && l.id)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        setRecentLogs(mergedLogs.slice(0, 5));
       }
     } catch (err) {
       console.error(err);
-      addToast('Failed to load projects', 'error');
+      addToast('Failed to load workspace updates', 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProjects();
+    fetchWorkspaceData();
   }, [activeWorkspace]);
 
-  // Handle starring a project
-  const handleToggleFavorite = async (e: React.MouseEvent, projectId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const res = await fetch(`/api/dashboard/projects/${projectId}/favorite`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (res.ok) {
-        addToast(data.isFavorite ? 'Project added to favorites' : 'Project removed from favorites', 'success');
-        
-        // Update local state
-        setProjects((prev) =>
-          prev.map((p) => (p.id === projectId ? { ...p, isFavorite: data.isFavorite } : p))
-        );
-        
-        // Notify sidebar
-        window.dispatchEvent(new Event('collabspace-projects-updated'));
-      }
-    } catch (err) {
-      addToast('Failed to update favorite status', 'error');
-    }
-  };
-
-  // Handle creating a project
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjName.trim()) {
@@ -100,10 +94,7 @@ export default function DashboardPage() {
         setNewProjDesc('');
         setNewProjStatus('todo');
         
-        // Reload project lists
-        await fetchProjects();
-        
-        // Notify sidebar list
+        await fetchWorkspaceData();
         window.dispatchEvent(new Event('collabspace-projects-updated'));
       } else {
         addToast(data.error || 'Failed to create project', 'error');
@@ -115,176 +106,294 @@ export default function DashboardPage() {
     }
   };
 
-  // Filter & Sort computation
-  const filteredProjects = projects
-    .filter((p) => {
-      // 1. Search Query Match
-      const matchesSearch = 
-        p.name.toLowerCase().includes(search.toLowerCase()) || 
-        (p.description && p.description.toLowerCase().includes(search.toLowerCase()));
-
-      // 2. Tab Filter Match
-      if (filterTab === 'active') {
-        return matchesSearch && p.status !== 'archived';
+  const handleToggleFavorite = async (e: React.MouseEvent, projectId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/dashboard/projects/${projectId}/favorite`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addToast(data.isFavorite ? 'Star added' : 'Star removed', 'success');
+        setProjects((prev) =>
+          prev.map((p) => (p.id === projectId ? { ...p, isFavorite: data.isFavorite } : p))
+        );
+        window.dispatchEvent(new Event('collabspace-projects-updated'));
       }
-      if (filterTab === 'favorites') {
-        return matchesSearch && p.isFavorite && p.status !== 'archived';
-      }
-      if (filterTab === 'archived') {
-        return matchesSearch && p.status === 'archived';
-      }
-      return matchesSearch; // 'all' tab includes archives as well
-    })
-    .sort((a, b) => {
-      if (sortBy === 'progress') {
-        return b.progress - a.progress;
-      }
-      if (sortBy === 'name') {
-        return a.name.localeCompare(b.name);
-      }
-      // default: 'updated' sort by updatedAt descending
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'backlog': return 'Backlog';
-      case 'todo': return 'Todo';
-      case 'in_progress': return 'In Progress';
-      case 'done': return 'Done';
-      case 'archived': return 'Archived';
-      default: return status;
+    } catch (err) {
+      addToast('Failed to update favorite status', 'error');
     }
   };
 
+  // Get current greeting based on time of day
+  const getGreeting = () => {
+    const hr = new Date().getHours();
+    if (hr < 12) return 'Good morning';
+    if (hr < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  // Filter urgent upcoming deadlines
+  const upcomingDeadlines = allTasks
+    .filter((t) => t.dueDate && t.status !== 'done')
+    .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+    .slice(0, 4);
+
+  // Filter My tasks assigned or general backlog items
+  const myTasks = allTasks
+    .filter((t) => t.status !== 'done')
+    .slice(0, 5);
+
+  // Extract unique active collaborators
+  const activeCollaborators = Array.from(
+    new Map<string, any>(
+      recentLogs
+        .map((log) => [log.user?.id, log.user] as [string, any])
+        .filter(([id, u]) => !!id && !!u)
+    ).values()
+  ).slice(0, 6);
+
   return (
-    <div className="console-container animate-fade-in">
-      {/* Console Header */}
-      <header className="console-header">
-        <div>
-          <h1>Projects Console</h1>
-          <p className="subtitle">Coordinate active workflows, monitor project progress, and manage task sheets.</p>
+    <div className="home-dashboard animate-fade-in" aria-label="Workspace Console Home">
+      
+      {/* 1. Header greeting */}
+      <header className="dashboard-welcome">
+        <div className="welcome-left">
+          <span className="date-badge">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+          </span>
+          <h1>{getGreeting()}, {user?.name || user?.email.split('@')[0]}</h1>
+          <p className="welcome-subtitle">Here is a summary of active workflows in {activeWorkspace?.name || 'Workspace'}.</p>
         </div>
-        <button className="btn-primary glow-effect" onClick={() => setIsModalOpen(true)}>
-          + Create Project
-        </button>
+        <div className="welcome-right">
+          <button className="btn-primary" onClick={() => setIsModalOpen(true)}>
+            ＋ Create Project
+          </button>
+        </div>
       </header>
 
-      {/* Filters Toolbar */}
-      <div className="toolbar glass">
-        {/* Search */}
-        <div className="search-box">
-          <span className="search-icon">🔍</span>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search projects by name..."
-          />
-        </div>
-
-        {/* Tab Filters */}
-        <div className="filter-tabs">
-          {(['active', 'favorites', 'all', 'archived'] as const).map((tab) => (
-            <button
-              key={tab}
-              className={`tab-btn ${filterTab === tab ? 'active' : ''}`}
-              onClick={() => setFilterTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {/* Sorting Dropdown */}
-        <div className="sort-box">
-          <span className="sort-label">Sort by:</span>
-          <select value={sortBy} onChange={(e: any) => setSortBy(e.target.value)} className="sort-select">
-            <option value="updated">Last Updated</option>
-            <option value="progress">Progress %</option>
-            <option value="name">Alphabetical</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Projects Grid List */}
       {isLoading ? (
-        <div className="loading-grid">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="skeleton card-skele"></div>
-          ))}
-        </div>
-      ) : filteredProjects.length === 0 ? (
-        <div className="empty-state glass">
-          <div className="empty-icon">📂</div>
-          <h3>No projects found</h3>
-          <p>Create a project or adjust your filters to display items.</p>
+        <div className="skeleton-grid">
+          <div className="skeleton card-skele h-120"></div>
+          <div className="skeleton card-skele h-240"></div>
+          <div className="skeleton card-skele h-240"></div>
         </div>
       ) : (
-        <div className="projects-grid">
-          {filteredProjects.map((p) => {
-            const formattedDate = new Date(p.updatedAt).toLocaleDateString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            });
-
-            return (
-              <Link key={p.id} href={`/dashboard/projects/${p.id}`} className="project-card glass">
-                <div className="card-top">
-                  <span className={`status-pill ${p.status}`}>
-                    {getStatusText(p.status)}
-                  </span>
-                  <button
-                    className={`fav-star-btn ${p.isFavorite ? 'active' : ''}`}
-                    onClick={(e) => handleToggleFavorite(e, p.id)}
-                    title={p.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                  >
-                    ★
-                  </button>
+        <div className="dashboard-main-grid">
+          
+          {/* LEFT COLUMN: Main metrics & details lists */}
+          <div className="dashboard-col-left">
+            
+            {/* stats overview widgets */}
+            <section className="stats-row">
+              <div className="stat-widget glass">
+                <span className="widget-icon">📁</span>
+                <div className="widget-body">
+                  <strong>{projects.length}</strong>
+                  <span className="widget-label">Active Projects</span>
                 </div>
+              </div>
 
-                <div className="card-middle">
-                  <h3>{p.name}</h3>
-                  <p className="desc">{p.description || 'No description provided.'}</p>
+              <div className="stat-widget glass">
+                <span className="widget-icon">✅</span>
+                <div className="widget-body">
+                  <strong>{allTasks.filter((t) => t.status !== 'done').length}</strong>
+                  <span className="widget-label">Pending Tasks</span>
                 </div>
+              </div>
 
-                {/* Progress bar */}
-                <div className="card-progress">
-                  <div className="progress-label-row">
-                    <span>Progress</span>
-                    <span className="progress-val">{p.progress}%</span>
-                  </div>
-                  <div className="progress-bar-bg">
-                    <div 
-                      className="progress-bar-fill" 
-                      style={{ width: `${p.progress}%` }}
-                    ></div>
-                  </div>
-                  <span className="task-count">{p.taskCount} tasks logged</span>
+              <div className="stat-widget glass">
+                <span className="widget-icon">🎉</span>
+                <div className="widget-body">
+                  <strong>{allTasks.filter((t) => t.status === 'done').length}</strong>
+                  <span className="widget-label">Completed Cards</span>
                 </div>
+              </div>
 
-                <div className="card-footer">
-                  <div className="member-avatars">
-                    {p.members.map((m: any) => {
-                      const avatar = m.user?.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(m.user?.name || m.user?.email || 'U')}`;
-                      return (
-                        <img
-                          key={m.id}
-                          src={avatar}
-                          alt="Avatar"
-                          title={`${m.user?.name || m.user?.email} (${m.role})`}
-                          className="member-avatar"
-                        />
-                      );
-                    })}
-                  </div>
-                  <span className="update-time">Updated {formattedDate}</span>
+              <div className="stat-widget glass">
+                <span className="widget-icon">📈</span>
+                <div className="widget-body">
+                  <strong>
+                    {projects.length > 0
+                      ? Math.round(projects.reduce((acc, p) => acc + p.progress, 0) / projects.length)
+                      : 0}%
+                  </strong>
+                  <span className="widget-label">Average Progress</span>
                 </div>
-              </Link>
-            );
-          })}
+              </div>
+            </section>
+
+            {/* Recently viewed projects section */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">📂 Active Projects</h2>
+              {projects.length === 0 ? (
+                <div className="empty-state">
+                  <span>📂</span>
+                  <p>No active projects in this workspace yet.</p>
+                  <button className="btn-primary" onClick={() => setIsModalOpen(true)}>Create Project</button>
+                </div>
+              ) : (
+                <div className="projects-minimal-grid">
+                  {projects.map((proj) => (
+                    <Link key={proj.id} href={`/dashboard/projects/${proj.id}`} className="mini-project-card glass-hover">
+                      <div className="proj-card-header">
+                        <span className="proj-icon">📁</span>
+                        <div className="proj-names">
+                          <h3>{proj.name}</h3>
+                          <span className="proj-task-count">{proj.taskCount} tasks logged</span>
+                        </div>
+                        <button 
+                          className={`star-action-btn ${proj.isFavorite ? 'active' : ''}`}
+                          onClick={(e) => handleToggleFavorite(e, proj.id)}
+                        >
+                          ★
+                        </button>
+                      </div>
+                      <p className="proj-card-desc">{proj.description || 'No description added.'}</p>
+                      
+                      <div className="proj-card-footer">
+                        <div className="prog-container">
+                          <span>{proj.progress}%</span>
+                          <div className="prog-bg">
+                            <div className="prog-fill" style={{ width: `${proj.progress}%` }}></div>
+                          </div>
+                        </div>
+                        <span className="status-indicator-badge">{proj.status.toUpperCase()}</span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* My pending tasks */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">✅ My Active Task Sheet</h2>
+              {myTasks.length === 0 ? (
+                <div className="empty-state">
+                  <span>✨</span>
+                  <p>All tasks completed! You are completely caught up.</p>
+                </div>
+              ) : (
+                <div className="task-minimal-list">
+                  {myTasks.map((t) => (
+                    <div key={t.id} className="task-row-item">
+                      <span className={`prio-dot ${t.priority}`}>●</span>
+                      <strong className="task-title">{t.title}</strong>
+                      <span className={`status-badge-inline ${t.status}`}>{t.status.replace('_', ' ')}</span>
+                      {t.dueDate && (
+                        <span className="task-due">📅 {new Date(t.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+          </div>
+
+          {/* RIGHT COLUMN: Quick links, AI recommendation advisory, Collaborators */}
+          <div className="dashboard-col-right">
+            
+            {/* Quick Actions Shortcuts */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">⚡ Quick Actions</h2>
+              <div className="quick-actions-box">
+                <button className="btn-action-shortcut" onClick={() => setIsModalOpen(true)}>
+                  📁 New Project Setup
+                </button>
+                <button className="btn-action-shortcut" onClick={() => addToast('Open the projects view to access the floating AI assistant panel', 'info')}>
+                  🤖 Consult AI Coprocessor
+                </button>
+                <button className="btn-action-shortcut" onClick={() => router.push('/dashboard/profile')}>
+                  ⚙️ Profile Settings
+                </button>
+              </div>
+            </section>
+
+            {/* AI Recommendations panel */}
+            <section className="dashboard-section glass ai-advisory-widget">
+              <h2 className="section-title">🧠 AI Executive Advisories</h2>
+              <div className="ai-report-bullets">
+                <ul>
+                  {projects.some((p) => p.progress < 25) && (
+                    <li>⚠️ **Project progress warning**: Some projects are under 25% checklist completions. Consider checking backlog dependencies.</li>
+                  )}
+                  {allTasks.some((t) => t.priority === 'urgent' && t.status !== 'done') && (
+                    <li>🔥 **Urgent deadlocks**: Urgent tasks are pending. Review active sprint boards.</li>
+                  )}
+                  <li>💬 **Team activity check**: CollabX team channel has logged active collaboration check-ins recently.</li>
+                  <li>💡 **Suggestion**: Break down large milestones into checklists to improve project health indices.</li>
+                </ul>
+              </div>
+            </section>
+
+            {/* Upcoming deadlines */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">⌛ Upcoming Deadlines</h2>
+              {upcomingDeadlines.length === 0 ? (
+                <div className="empty-state-sm">No upcoming deadlines logged.</div>
+              ) : (
+                <div className="deadlines-list">
+                  {upcomingDeadlines.map((t) => (
+                    <div key={t.id} className="deadline-item-card">
+                      <div className="deadline-left">
+                        <strong>{t.title}</strong>
+                        <span className={`prio-text-sm ${t.priority}`}>{t.priority.toUpperCase()}</span>
+                      </div>
+                      <span className="deadline-date-alert overdue">
+                        {new Date(t.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Recent activity timeline overview */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">⏱️ Recent Audits</h2>
+              {recentLogs.length === 0 ? (
+                <div className="empty-state-sm">No activity logged in this workspace workspace.</div>
+              ) : (
+                <div className="mini-timeline-stack">
+                  {recentLogs.map((log) => (
+                    <div key={log.id} className="mini-timeline-card">
+                      <strong>{log.user?.name || log.user?.email.split('@')[0]}</strong>
+                      <span> {log.action}d {log.fieldName || 'item'}</span>
+                      <p className="time">{new Date(log.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Recent collaborators */}
+            <section className="dashboard-section glass">
+              <h2 className="section-title">👥 Team Activity Leader</h2>
+              {activeCollaborators.length === 0 ? (
+                <div className="empty-state-sm">No collaborators active today.</div>
+              ) : (
+                <div className="collaborators-faces-row">
+                  {activeCollaborators.map((c: any) => {
+                    const avatar = c.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(c.name || c.email)}`;
+                    return (
+                      <img
+                        key={c.id}
+                        src={avatar}
+                        alt="Avatar"
+                        title={c.name || c.email}
+                        className="collaborator-face-circle"
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+          </div>
+
         </div>
       )}
 
@@ -350,10 +459,10 @@ export default function DashboardPage() {
                 </button>
                 <button
                   type="submit"
-                  className="btn-primary glow-effect"
+                  className="btn-submit"
                   disabled={isCreating}
                 >
-                  {isCreating ? 'Creating project...' : 'Create Project'}
+                  {isCreating ? 'Creating Project...' : 'Create Project'}
                 </button>
               </div>
             </form>
@@ -362,314 +471,377 @@ export default function DashboardPage() {
       )}
 
       <style jsx>{`
-        .console-container {
-          padding: 32px;
+        .home-dashboard {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 40px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 32px;
+        }
+
+        .dashboard-welcome {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-end;
+          gap: 20px;
+        }
+        .date-badge {
+          font-size: 10px;
+          font-weight: 700;
+          color: var(--primary);
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          margin-bottom: 8px;
+          display: block;
+        }
+        .dashboard-welcome h1 {
+          font-size: 26px;
+          font-weight: 800;
+          color: var(--fg-primary);
+          letter-spacing: -0.03em;
+        }
+        .welcome-subtitle {
+          font-size: 13px;
+          color: var(--fg-secondary);
+          margin-top: 4px;
+        }
+
+        .dashboard-main-grid {
+          display: grid;
+          grid-template-columns: 8fr 4fr;
+          gap: 32px;
+          align-items: start;
+        }
+        .dashboard-col-left,
+        .dashboard-col-right {
           display: flex;
           flex-direction: column;
           gap: 24px;
-          max-width: 1200px;
-          margin: 0 auto;
         }
 
-        .console-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .console-header h1 {
-          font-size: 28px;
-          font-weight: 800;
-          color: var(--fg-primary);
-          margin-bottom: 6px;
-        }
-        .subtitle {
-          font-size: 14px;
-          color: var(--fg-secondary);
-        }
-
-        /* Button */
-        .btn-primary {
-          padding: 10px 20px;
-          background: var(--primary);
-          border: none;
-          color: white;
-          font-size: 14px;
-          font-weight: 600;
-          border-radius: var(--radius-md);
-          cursor: pointer;
-          transition: background-color var(--transition-fast);
-        }
-        .btn-primary:hover {
-          background: var(--primary-hover);
-        }
-
-        /* Toolbar */
-        .toolbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 12px 20px;
-          border-radius: var(--radius-md);
+        /* Stats Row widgets */
+        .stats-row {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           gap: 16px;
-          flex-wrap: wrap;
         }
-        .search-box {
+        .stat-widget {
+          padding: 16px 20px;
+          border-radius: var(--radius-md);
           display: flex;
           align-items: center;
+          gap: 16px;
           background: var(--bg-secondary);
           border: 1px solid var(--border-color);
-          border-radius: var(--radius-sm);
-          padding: 6px 12px;
-          flex-grow: 1;
-          max-width: 320px;
         }
-        .search-icon {
-          font-size: 14px;
-          margin-right: 8px;
+        .widget-icon {
+          font-size: 22px;
         }
-        .search-box input {
-          background: none;
-          border: none;
-          color: var(--fg-primary);
-          font-size: 13px;
-          outline: none;
-          width: 100%;
-        }
-        
-        .filter-tabs {
+        .widget-body {
           display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .widget-body strong {
+          font-size: 18px;
+          color: var(--fg-primary);
+          font-weight: 800;
+        }
+        .widget-label {
+          font-size: 11px;
+          color: var(--fg-tertiary);
+          font-weight: 600;
+        }
+
+        /* General dashboard section box */
+        .dashboard-section {
+          padding: 24px;
+          border-radius: var(--radius-lg);
           background: var(--bg-secondary);
-          padding: 4px;
-          border-radius: var(--radius-sm);
           border: 1px solid var(--border-color);
         }
-        .tab-btn {
-          border: none;
-          background: none;
-          color: var(--fg-secondary);
+        .section-title {
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          color: var(--fg-tertiary);
+          letter-spacing: 0.05em;
+          margin-bottom: 16px;
+          border-bottom: 1px solid var(--border-color);
+          padding-bottom: 8px;
+        }
+
+        .projects-minimal-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 12px;
+        }
+        .mini-project-card {
+          padding: 16px;
+          border-radius: var(--radius-md);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          transition: border-color var(--transition-fast), transform var(--transition-fast);
+        }
+        .mini-project-card:hover {
+          border-color: var(--border-hover);
+          transform: translateY(-1px);
+        }
+        .proj-card-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .proj-icon {
+          font-size: 18px;
+        }
+        .proj-names {
+          flex-grow: 1;
+        }
+        .proj-names h3 {
           font-size: 13px;
-          font-weight: 500;
-          padding: 6px 14px;
-          border-radius: 4px;
+          font-weight: 700;
+          color: var(--fg-primary);
+        }
+        .proj-task-count {
+          font-size: 10px;
+          color: var(--fg-tertiary);
+        }
+        .star-action-btn {
+          background: none;
+          border: none;
+          color: var(--fg-tertiary);
+          font-size: 14px;
+          cursor: pointer;
+        }
+        .star-action-btn.active {
+          color: var(--warning);
+        }
+        .proj-card-desc {
+          font-size: 12px;
+          color: var(--fg-secondary);
+          line-height: 1.4;
+        }
+
+        .proj-card-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 4px;
+        }
+        .prog-container {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 11px;
+          color: var(--fg-secondary);
+          flex-grow: 1;
+          max-width: 180px;
+        }
+        .prog-bg {
+          height: 4px;
+          background: var(--bg-tertiary);
+          border-radius: 2px;
+          flex-grow: 1;
+          overflow: hidden;
+        }
+        .prog-fill {
+          height: 100%;
+          background: var(--primary);
+        }
+        .status-indicator-badge {
+          font-size: 9px;
+          font-weight: 700;
+          color: var(--fg-tertiary);
+          background: var(--bg-tertiary);
+          padding: 2px 6px;
+          border-radius: 3px;
+        }
+
+        /* My task row items list */
+        .task-minimal-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .task-row-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 14px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+        }
+        .prio-dot {
+          font-size: 10px;
+        }
+        .prio-dot.low { color: var(--fg-tertiary); }
+        .prio-dot.medium { color: var(--info); }
+        .prio-dot.high { color: var(--warning); }
+        .prio-dot.urgent { color: var(--error); }
+
+        .task-title {
+          flex-grow: 1;
+          color: var(--fg-primary);
+        }
+        .status-badge-inline {
+          font-size: 9px;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 1px 4px;
+          border-radius: 3px;
+          background: var(--bg-tertiary);
+          color: var(--fg-secondary);
+        }
+        .task-due {
+          font-size: 11px;
+          color: var(--fg-tertiary);
+        }
+
+        /* Quick actions styling */
+        .quick-actions-box {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .btn-action-shortcut {
+          width: 100%;
+          text-align: left;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          color: var(--fg-secondary);
+          font-size: 12px;
+          font-weight: 600;
+          padding: 10px 14px;
+          border-radius: var(--radius-sm);
           cursor: pointer;
           transition: background-color var(--transition-fast), color var(--transition-fast);
         }
-        .tab-btn.active {
-          background: var(--bg-tertiary);
+        .btn-action-shortcut:hover {
+          background-color: var(--bg-tertiary);
           color: var(--fg-primary);
-          font-weight: 600;
         }
 
-        .sort-box {
-          display: flex;
-          align-items: center;
-          gap: 8px;
+        /* AI report styling */
+        .ai-advisory-widget {
+          background: linear-gradient(135deg, rgba(79, 70, 229, 0.04) 0%, rgba(129, 140, 248, 0.04) 100%);
+          border-color: rgba(79, 70, 229, 0.15);
         }
-        .sort-label {
-          font-size: 12px;
-          color: var(--fg-tertiary);
-          font-weight: 600;
-        }
-        .sort-select {
-          background: var(--bg-secondary);
-          border: 1px solid var(--border-color);
-          color: var(--fg-primary);
-          font-size: 13px;
-          padding: 6px 10px;
-          border-radius: var(--radius-sm);
-          outline: none;
-        }
-
-        /* Project card lists */
-        .projects-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-          gap: 24px;
-        }
-        .loading-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-          gap: 24px;
-        }
-        .card-skele {
-          height: 220px;
-          border-radius: var(--radius-lg);
-        }
-
-        .project-card {
-          padding: 24px;
-          border-radius: var(--radius-lg);
+        .ai-report-bullets ul {
+          padding-left: 12px;
           display: flex;
           flex-direction: column;
-          gap: 16px;
-          transition: transform 0.2s, border-color var(--transition-fast);
+          gap: 10px;
         }
-        .project-card:hover {
-          transform: translateY(-3px);
-          border-color: var(--border-hover);
-        }
-
-        .card-top {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .status-pill {
-          font-size: 10px;
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          padding: 4px 8px;
-          border-radius: 4px;
-        }
-        .status-pill.backlog {
-          background: rgba(113, 113, 122, 0.08);
-          color: var(--fg-secondary);
-          border: 1px solid rgba(113, 113, 122, 0.15);
-        }
-        .status-pill.todo {
-          background: rgba(59, 130, 246, 0.08);
-          color: var(--info);
-          border: 1px solid rgba(59, 130, 246, 0.15);
-        }
-        .status-pill.in_progress {
-          background: rgba(99, 102, 241, 0.08);
-          color: var(--primary);
-          border: 1px solid rgba(99, 102, 241, 0.15);
-        }
-        .status-pill.done {
-          background: rgba(16, 185, 129, 0.08);
-          color: var(--success);
-          border: 1px solid rgba(16, 185, 129, 0.15);
-        }
-        .status-pill.archived {
-          background: rgba(239, 68, 68, 0.08);
-          color: var(--error);
-          border: 1px solid rgba(239, 68, 68, 0.15);
-        }
-
-        .fav-star-btn {
-          border: none;
-          background: none;
-          color: var(--fg-tertiary);
-          font-size: 18px;
-          cursor: pointer;
-          transition: color var(--transition-fast), transform var(--transition-fast);
-        }
-        .fav-star-btn:hover {
-          transform: scale(1.15);
-          color: var(--warning);
-        }
-        .fav-star-btn.active {
-          color: var(--warning);
-        }
-
-        .card-middle h3 {
-          font-size: 17px;
-          color: var(--fg-primary);
-          margin-bottom: 8px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .card-middle .desc {
-          font-size: 13px;
+        .ai-report-bullets li {
+          font-size: 12px;
           color: var(--fg-secondary);
           line-height: 1.5;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-          height: 38px;
         }
-
-        /* Card Progress */
-        .card-progress {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        .progress-label-row {
-          display: flex;
-          justify-content: space-between;
-          font-size: 11px;
-          color: var(--fg-secondary);
-          font-weight: 600;
-        }
-        .progress-val {
+        .ai-report-bullets :global(strong) {
           color: var(--fg-primary);
         }
-        .progress-bar-bg {
-          height: 6px;
-          background: var(--bg-tertiary);
-          border-radius: 3px;
-          overflow: hidden;
+
+        /* Deadlines list */
+        .deadlines-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .deadline-item-card {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 14px;
+          background: var(--bg-primary);
           border: 1px solid var(--border-color);
+          border-radius: var(--radius-sm);
         }
-        .progress-bar-fill {
-          height: 100%;
-          background: linear-gradient(90deg, var(--primary) 0%, #818cf8 100%);
-          border-radius: 3px;
-          transition: width 0.4s ease-out;
+        .deadline-left {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
         }
-        .task-count {
+        .deadline-left strong {
+          font-size: 12px;
+          color: var(--fg-primary);
+        }
+        .prio-text-sm {
+          font-size: 8px;
+          font-weight: 800;
+        }
+        .prio-text-sm.low { color: var(--fg-tertiary); }
+        .prio-text-sm.medium { color: var(--info); }
+        .prio-text-sm.high { color: var(--warning); }
+        .prio-text-sm.urgent { color: var(--error); }
+        .deadline-date-alert {
           font-size: 11px;
-          color: var(--fg-tertiary);
+          font-weight: 700;
+        }
+        .deadline-date-alert.overdue {
+          color: var(--error);
         }
 
-        /* Card Footer */
-        .card-footer {
-          margin-top: auto;
+        /* Mini Timeline stacks */
+        .mini-timeline-stack {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-top: 1px solid var(--border-color);
-          padding-top: 12px;
+          flex-direction: column;
+          gap: 8px;
         }
-        .member-avatars {
+        .mini-timeline-card {
+          font-size: 12px;
+          color: var(--fg-secondary);
+        }
+        .mini-timeline-card strong {
+          color: var(--fg-primary);
+        }
+        .mini-timeline-card .time {
+          font-size: 9px;
+          color: var(--fg-tertiary);
+          margin-top: 1px;
+        }
+
+        /* Collaborators row faces */
+        .collaborators-faces-row {
           display: flex;
-          align-items: center;
+          gap: 6px;
+          flex-wrap: wrap;
         }
-        .member-avatar {
-          width: 24px;
-          height: 24px;
+        .collaborator-face-circle {
+          width: 28px;
+          height: 28px;
           border-radius: 50%;
-          border: 2px solid var(--bg-secondary);
-          margin-left: -6px;
-          background: var(--bg-tertiary);
-        }
-        .member-avatar:first-child {
-          margin-left: 0;
-        }
-        .update-time {
-          font-size: 11px;
-          color: var(--fg-tertiary);
+          border: 1px solid var(--border-color);
+          background: var(--bg-primary);
         }
 
+        /* Empty states */
         .empty-state {
-          padding: 60px;
-          border-radius: var(--radius-lg);
           text-align: center;
+          padding: 32px;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
-          gap: 16px;
+          gap: 12px;
+          color: var(--fg-tertiary);
+          font-size: 13px;
         }
-        .empty-icon {
-          font-size: 48px;
+        .empty-state span {
+          font-size: 32px;
         }
-        .empty-state h3 {
-          font-size: 18px;
-          color: var(--fg-primary);
-        }
-        .empty-state p {
-          font-size: 14px;
-          color: var(--fg-secondary);
-          max-width: 320px;
+        .empty-state-sm {
+          font-size: 11px;
+          color: var(--fg-tertiary);
+          font-style: italic;
         }
 
-        /* Modal Overlay styling */
+        /* Project Creation Modal overlay styling */
         .modal-overlay {
           position: fixed;
           top: 0;
@@ -681,18 +853,17 @@ export default function DashboardPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          z-index: 1000;
-          padding: 24px;
+          z-index: 2000;
         }
         .modal-card {
           width: 100%;
-          max-width: 480px;
+          max-width: 460px;
+          padding: 28px;
           border-radius: var(--radius-lg);
-          padding: 32px;
           box-shadow: var(--shadow-lg);
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          gap: 20px;
         }
         .modal-header {
           display: flex;
@@ -700,79 +871,80 @@ export default function DashboardPage() {
           align-items: center;
         }
         .modal-header h2 {
-          font-size: 20px;
+          font-size: 16px;
+          font-weight: 800;
           color: var(--fg-primary);
         }
         .modal-close-btn {
           border: none;
           background: none;
           color: var(--fg-tertiary);
-          font-size: 18px;
+          font-size: 16px;
           cursor: pointer;
         }
         .modal-form {
           display: flex;
           flex-direction: column;
-          gap: 20px;
+          gap: 16px;
         }
         .modal-form label {
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
-          color: var(--fg-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
+          color: var(--fg-secondary);
+          margin-bottom: 6px;
         }
         .modal-form input,
         .modal-form textarea,
-        .modal-form select {
+        .select-input {
+          width: 100%;
           padding: 10px 14px;
-          background: var(--bg-secondary);
+          background: var(--bg-primary);
           border: 1px solid var(--border-color);
           border-radius: var(--radius-md);
           color: var(--fg-primary);
-          font-size: 14px;
+          font-size: 13px;
           outline: none;
-          width: 100%;
-        }
-        .modal-form input:focus,
-        .modal-form textarea:focus,
-        .modal-form select:focus {
-          border-color: var(--border-focus);
-          box-shadow: 0 0 0 3px var(--primary-glow);
         }
         .modal-actions {
           display: flex;
           justify-content: flex-end;
-          gap: 12px;
-          margin-top: 12px;
+          gap: 10px;
+          margin-top: 10px;
         }
         .btn-cancel {
-          padding: 10px 20px;
           background: none;
           border: 1px solid var(--border-color);
           color: var(--fg-secondary);
-          font-size: 14px;
-          border-radius: var(--radius-md);
+          padding: 8px 16px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 600;
           cursor: pointer;
-          transition: background-color var(--transition-fast);
         }
-        .btn-cancel:hover {
-          background: var(--bg-secondary);
+        .btn-submit {
+          background: var(--primary);
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
         }
 
-        @media (max-width: 768px) {
-          .console-container {
-            padding: 20px;
-          }
-          .toolbar {
-            flex-direction: column;
-            align-items: stretch;
-          }
-          .search-box {
-            max-width: none;
-          }
-          .filter-tabs {
-            overflow-x: auto;
+        .skeleton-grid {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .h-120 { height: 120px; }
+        .h-240 { height: 240px; }
+
+        @media (max-width: 992px) {
+          .dashboard-main-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
