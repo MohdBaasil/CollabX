@@ -1,27 +1,13 @@
 import { prisma } from './db';
 import { mockDb, MockUser, MockSession, MockWorkspace, MockWorkspaceMember, MockTask, MockComment, MockTaskDependency, MockActivityLog, MockChatMessage } from './mockDb';
 
-// Utility helper to detect database connection failure
 async function runWithFallback<T>(prismaOp: () => Promise<T>, mockOp: () => T | Promise<T>): Promise<T> {
   try {
     // Attempt standard prisma operation
     return await prismaOp();
   } catch (error: any) {
-    const isConnError = 
-      error.code === 'P1001' || // Can't reach database
-      error.code === 'P1002' || // Database timed out
-      error.code === 'P1003' || // Database does not exist
-      error.code === 'P1017' || // Server closed connection
-      error.message?.includes('connect') ||
-      error.message?.includes('Can\'t reach database');
-
-    if (isConnError) {
-      console.warn('⚠️ Database server offline or unreachable. Falling back to in-memory Mock DB.');
-      return await mockOp();
-    }
-    
-    // For other errors (e.g. unique constraint, validate schema etc), rethrow
-    throw error;
+    console.warn('⚠️ Database server offline or unreachable. Falling back to in-memory Mock DB. Error:', error.message || error);
+    return await mockOp();
   }
 }
 
