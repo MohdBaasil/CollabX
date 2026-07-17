@@ -2726,6 +2726,33 @@ function ProjectWorkspaceContent() {
                 </>
               )}
 
+              {/* Share / Join Link UI */}
+              <div className="sidebar-divider" style={{ margin: '20px 0' }}></div>
+              <h3 className="subsection-title">Project Share Link</h3>
+              <p className="invite-hint">Copy and send this secret link to let others join this project directly via Google or standard email signup.</p>
+              <div className="invite-input-row" style={{ marginTop: '8px' }}>
+                <input
+                  type="text"
+                  readOnly
+                  value={typeof window !== 'undefined' ? `${window.location.origin}/dashboard/projects/${projectId}/join` : ''}
+                  className="invite-email-input"
+                  style={{ background: 'var(--bg-secondary)', cursor: 'text', fontFamily: 'monospace', fontSize: '11px' }}
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+                <button
+                  type="button"
+                  className="btn-primary invite-btn"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      navigator.clipboard.writeText(`${window.location.origin}/dashboard/projects/${projectId}/join`);
+                      addToast('Share link copied to clipboard!', 'success');
+                    }
+                  }}
+                >
+                  🔗 Copy Link
+                </button>
+              </div>
+
               <div className="sidebar-divider" style={{ margin: '24px 0' }}></div>
 
               <h2 className="section-title text-red">⚠️ Destructive Zone</h2>

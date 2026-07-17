@@ -153,6 +153,30 @@ export const dbService = {
     );
   },
 
+  async registerPlaceholderUser(userId: string, passwordHash: string, name: string | null) {
+    return runWithFallback(
+      () => prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          name,
+          emailVerified: false, // will require verification next
+        },
+      }),
+      () => {
+        const user = mockDb.users.find((u) => u.id === userId);
+        if (user) {
+          user.passwordHash = passwordHash;
+          user.name = name;
+          user.emailVerified = false;
+          user.updatedAt = new Date();
+          return user;
+        }
+        throw new Error('User not found in mock database');
+      }
+    );
+  },
+
   // --- OAUTH ACCOUNTS ---
   async linkOAuthAccount(userId: string, provider: string, providerAccountId: string) {
     return runWithFallback(
@@ -896,10 +920,18 @@ export const dbService = {
   async addProjectMember(projectId: string, email: string, role: string, invitedByUserId: string) {
     return runWithFallback(
       async () => {
-        // Find user by email
-        const targetUser = await prisma.user.findUnique({ where: { email } });
+        // Find user by email, or create a placeholder if they don't exist yet
+        let targetUser = await prisma.user.findUnique({ where: { email } });
         if (!targetUser) {
-          throw new Error('USER_NOT_FOUND');
+          targetUser = await prisma.user.create({
+            data: {
+              email,
+              name: null,
+              passwordHash: null,
+              avatarUrl: null,
+              emailVerified: false,
+            }
+          });
         }
 
         // Check if already a member
@@ -955,13 +987,24 @@ export const dbService = {
       },
       () => {
         // Mock fallback
-        const targetUser = mockDb.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+        let targetUser = mockDb.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
         if (!targetUser) {
-          throw new Error('USER_NOT_FOUND');
+          targetUser = {
+            id: Math.random().toString(36).substring(2, 11),
+            email,
+            name: null,
+            passwordHash: null,
+            avatarUrl: null,
+            emailVerified: false,
+            theme: 'dark',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          mockDb.users.push(targetUser);
         }
 
         const existing = mockDb.projectMembers.find(
-          (pm) => pm.projectId === projectId && pm.userId === targetUser.id
+          (pm) => pm.projectId === projectId && pm.userId === targetUser!.id
         );
         if (existing) {
           throw new Error('ALREADY_MEMBER');
@@ -974,13 +1017,13 @@ export const dbService = {
 
         // Add to workspace if not already
         const existingWs = mockDb.workspaceMembers.find(
-          (wm) => wm.workspaceId === project.workspaceId && wm.userId === targetUser.id
+          (wm) => wm.workspaceId === project.workspaceId && wm.userId === targetUser!.id
         );
         if (!existingWs) {
           mockDb.workspaceMembers.push({
             id: Math.random().toString(36).substring(2, 9),
             workspaceId: project.workspaceId,
-            userId: targetUser.id,
+            userId: targetUser!.id,
             role: 'member',
             createdAt: new Date(),
           });

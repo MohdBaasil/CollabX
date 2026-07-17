@@ -16,20 +16,31 @@ export async function POST(request: Request) {
     }
 
     const existingUser = await dbService.findUserByEmail(email);
+    let user;
+
     if (existingUser) {
-      return NextResponse.json({ error: 'User already exists with this email' }, { status: 400 });
+      // If it is a placeholder user created via invitation (no password hash set yet)
+      if (!existingUser.passwordHash) {
+        // Hash password
+        const passwordHash = await hash(password, 10);
+        
+        // Upgrade placeholder user to a full user
+        user = await dbService.registerPlaceholderUser(existingUser.id, passwordHash, name || null);
+      } else {
+        return NextResponse.json({ error: 'User already exists with this email' }, { status: 400 });
+      }
+    } else {
+      // Hash password
+      const passwordHash = await hash(password, 10);
+
+      // Create new user
+      user = await dbService.createUser({
+        email,
+        passwordHash,
+        name: name || null,
+        emailVerified: false, // Must verify email first
+      });
     }
-
-    // Hash password
-    const passwordHash = await hash(password, 10);
-
-    // Create user
-    const user = await dbService.createUser({
-      email,
-      passwordHash,
-      name: name || null,
-      emailVerified: false, // Must verify email first
-    });
 
     // Create verification token (simple random hex)
     const verificationToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);

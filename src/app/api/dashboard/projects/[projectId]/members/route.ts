@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/jwt';
 import { dbService } from '@/lib/dbService';
+import { sendInviteEmail } from '@/lib/email';
 
 // GET — List project members
 export async function GET(
@@ -74,16 +75,17 @@ export async function POST(
 
     const member = await dbService.addProjectMember(projectId, email.trim().toLowerCase(), memberRole, payload.userId);
 
+    // Get inviter details
+    const inviter = await dbService.findUserById(payload.userId);
+    const inviterName = inviter?.name || inviter?.email || 'A team member';
+
+    // Send mock invite email (logs to console)
+    await sendInviteEmail(email.trim().toLowerCase(), project.name, inviterName);
+
     return NextResponse.json(member, { status: 201 });
   } catch (error: any) {
     const msg = error?.message || '';
 
-    if (msg === 'USER_NOT_FOUND') {
-      return NextResponse.json(
-        { error: 'No account found with that email. They need to sign up first.' },
-        { status: 404 }
-      );
-    }
     if (msg === 'ALREADY_MEMBER') {
       return NextResponse.json(
         { error: 'This user is already a member of this project.' },

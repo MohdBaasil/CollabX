@@ -18,6 +18,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [projects, setProjects] = useState<any[]>([]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // Handle pending project joins after login/registration
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const pendingJoinProjectId = localStorage.getItem('collabspace-pending-join');
+      if (pendingJoinProjectId) {
+        // Remove it first to prevent redirect loops
+        localStorage.removeItem('collabspace-pending-join');
+        router.push(`/dashboard/projects/${pendingJoinProjectId}/join`);
+      }
+    }
+  }, [router]);
+
   // Sync sidebar projects list
   useEffect(() => {
     const fetchProjects = async () => {
