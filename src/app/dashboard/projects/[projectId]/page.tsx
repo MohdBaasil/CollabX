@@ -175,6 +175,12 @@ function ProjectWorkspaceContent() {
   const [isAnalyticsLoading, setIsAnalyticsLoading] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<{ index: number; type: 'ideal' | 'actual'; x: number; y: number; val: number } | null>(null);
 
+  // --- MEMBER MANAGEMENT STATES ---
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('editor');
+  const [isInviting, setIsInviting] = useState(false);
+  const [membersList, setMembersList] = useState<any[]>([]);
+
   // --- PRODUCTION STATE ---
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [commandSearch, setCommandSearch] = useState('');
@@ -539,6 +545,7 @@ function ProjectWorkspaceContent() {
   useEffect(() => {
     if (projectId) {
       loadData();
+      fetchMembers();
     }
   }, [projectId]);
 
@@ -565,6 +572,90 @@ function ProjectWorkspaceContent() {
       fetchTaskLogs(selectedTask.id);
     }
   }, [selectedTask]);
+
+  // --- MEMBER MANAGEMENT HANDLERS ---
+  const fetchMembers = async () => {
+    try {
+      const res = await fetch(`/api/dashboard/projects/${projectId}/members`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setMembersList(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch members', err);
+    }
+  };
+
+  const handleInviteMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) {
+      addToast('Please enter an email address', 'warning');
+      return;
+    }
+    setIsInviting(true);
+    try {
+      const res = await fetch(`/api/dashboard/projects/${projectId}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addToast(`${inviteEmail} added as ${inviteRole}`, 'success');
+        setInviteEmail('');
+        setInviteRole('editor');
+        fetchMembers();
+        fetchProjectDetails();
+        syncUpdate('member-added', { projectId });
+      } else {
+        addToast(data.error || 'Failed to invite member', 'error');
+      }
+    } catch (err) {
+      addToast('Network error while inviting member', 'error');
+    } finally {
+      setIsInviting(false);
+    }
+  };
+
+  const handleRemoveMember = async (memberUserId: string, memberEmail: string) => {
+    if (!confirm(`Remove ${memberEmail} from this project?`)) return;
+    try {
+      const res = await fetch(`/api/dashboard/projects/${projectId}/members?userId=${memberUserId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addToast(`${memberEmail} removed from project`, 'success');
+        fetchMembers();
+        fetchProjectDetails();
+        syncUpdate('member-removed', { projectId });
+      } else {
+        addToast(data.error || 'Failed to remove member', 'error');
+      }
+    } catch (err) {
+      addToast('Network error while removing member', 'error');
+    }
+  };
+
+  const handleUpdateMemberRole = async (memberUserId: string, newRole: string) => {
+    try {
+      const res = await fetch(`/api/dashboard/projects/${projectId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: memberUserId, role: newRole }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        addToast(`Role updated to ${newRole}`, 'success');
+        fetchMembers();
+        fetchProjectDetails();
+      } else {
+        addToast(data.error || 'Failed to update role', 'error');
+      }
+    } catch (err) {
+      addToast('Network error while updating role', 'error');
+    }
+  };
 
   const handleToggleFavorite = async () => {
     if (!project) return;
@@ -2545,6 +2636,95 @@ function ProjectWorkspaceContent() {
                   </button>
                 )}
               </form>
+
+              <div className="sidebar-divider" style={{ margin: '24px 0' }}></div>
+
+              {/* TEAM MEMBERS SECTION */}
+              <h2 className="section-title">👥 Team Members</h2>
+              
+              {/* Current Members List */}
+              <div className="members-list">
+                {(membersList.length > 0 ? membersList : project?.members || []).map((m: any) => {
+                  const memberUser = m.user;
+                  if (!memberUser) return null;
+                  const avatar = memberUser.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(memberUser.name || memberUser.email)}`;
+                  const isOwner = m.role === 'owner';
+                  const isCurrentUser = memberUser.id === user?.id;
+                  const canManage = (project?.userRole === 'owner' || project?.userRole === 'admin') && !isOwner && !isCurrentUser;
+                  
+                  return (
+                    <div key={m.id || m.userId} className="member-row">
+                      <img src={avatar} alt="" className="member-avatar" />
+                      <div className="member-info">
+                        <span className="member-name">
+                          {memberUser.name || memberUser.email.split('@')[0]}
+                          {isCurrentUser && <span className="member-you-badge">you</span>}
+                        </span>
+                        <span className="member-email">{memberUser.email}</span>
+                      </div>
+                      <div className="member-actions">
+                        {canManage ? (
+                          <select
+                            className="member-role-select"
+                            value={m.role}
+                            onChange={(e) => handleUpdateMemberRole(memberUser.id, e.target.value)}
+                          >
+                            <option value="admin">Admin</option>
+                            <option value="editor">Editor</option>
+                            <option value="viewer">Viewer</option>
+                          </select>
+                        ) : (
+                          <span className={`member-role-badge ${m.role}`}>{m.role}</span>
+                        )}
+                        {canManage && (
+                          <button
+                            className="member-remove-btn"
+                            onClick={() => handleRemoveMember(memberUser.id, memberUser.email)}
+                            title="Remove member"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Invite New Member Form */}
+              {(project?.userRole === 'owner' || project?.userRole === 'admin') && (
+                <>
+                  <div className="sidebar-divider" style={{ margin: '20px 0' }}></div>
+                  <h3 className="subsection-title">Invite a Collaborator</h3>
+                  <p className="invite-hint">Enter the email of a registered CollabSpace user to add them to this project.</p>
+                  <form onSubmit={handleInviteMember} className="invite-form">
+                    <div className="invite-input-row">
+                      <input
+                        type="email"
+                        placeholder="friend@example.com"
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        required
+                        disabled={isInviting}
+                        className="invite-email-input"
+                      />
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        disabled={isInviting}
+                        className="invite-role-select"
+                      >
+                        <option value="editor">Editor</option>
+                        <option value="admin">Admin</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                      <button type="submit" className="btn-primary invite-btn" disabled={isInviting}>
+                        {isInviting ? 'Adding...' : 'Invite'}
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
 
               <div className="sidebar-divider" style={{ margin: '24px 0' }}></div>
 
@@ -5174,6 +5354,186 @@ function ProjectWorkspaceContent() {
         .btn-action-dest.delete {
           color: var(--error);
           border-color: rgba(239,68,68,0.15);
+        }
+
+        /* MEMBER MANAGEMENT STYLES */
+        .members-list {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          margin-top: 8px;
+        }
+        .member-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 14px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          transition: border-color var(--transition-fast);
+        }
+        .member-row:hover {
+          border-color: var(--border-hover);
+        }
+        .member-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--bg-tertiary);
+          flex-shrink: 0;
+        }
+        .member-info {
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          overflow: hidden;
+          gap: 1px;
+        }
+        .member-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--fg-primary);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .member-you-badge {
+          font-size: 9px;
+          font-weight: 700;
+          padding: 1px 5px;
+          border-radius: 3px;
+          background: rgba(79, 70, 229, 0.1);
+          color: var(--primary);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .member-email {
+          font-size: 11px;
+          color: var(--fg-tertiary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .member-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .member-role-badge {
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          padding: 3px 8px;
+          border-radius: 4px;
+          letter-spacing: 0.04em;
+        }
+        .member-role-badge.owner {
+          background: rgba(79, 70, 229, 0.1);
+          color: var(--primary);
+        }
+        .member-role-badge.admin {
+          background: rgba(34, 197, 94, 0.1);
+          color: var(--success);
+        }
+        .member-role-badge.editor {
+          background: rgba(245, 158, 11, 0.1);
+          color: var(--warning);
+        }
+        .member-role-badge.viewer {
+          background: var(--bg-tertiary);
+          color: var(--fg-tertiary);
+        }
+        .member-role-select {
+          font-size: 11px;
+          padding: 4px 8px;
+          border-radius: var(--radius-sm);
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          color: var(--fg-secondary);
+          cursor: pointer;
+          outline: none;
+        }
+        .member-role-select:focus {
+          border-color: var(--primary);
+        }
+        .member-remove-btn {
+          background: none;
+          border: none;
+          color: var(--fg-tertiary);
+          font-size: 14px;
+          cursor: pointer;
+          padding: 2px 6px;
+          border-radius: 4px;
+          transition: all var(--transition-fast);
+        }
+        .member-remove-btn:hover {
+          color: var(--error);
+          background: rgba(239, 68, 68, 0.08);
+        }
+        .subsection-title {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--fg-primary);
+          margin-bottom: 4px;
+        }
+        .invite-hint {
+          font-size: 12px;
+          color: var(--fg-tertiary);
+          margin-bottom: 12px;
+          line-height: 1.4;
+        }
+        .invite-form {
+          margin-top: 4px;
+        }
+        .invite-input-row {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+        .invite-email-input {
+          flex-grow: 1;
+          padding: 9px 14px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          color: var(--fg-primary);
+          font-size: 13px;
+          outline: none;
+        }
+        .invite-email-input:focus {
+          border-color: var(--primary);
+        }
+        .invite-role-select {
+          padding: 9px 10px;
+          background: var(--bg-primary);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          color: var(--fg-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          outline: none;
+          min-width: 90px;
+        }
+        .invite-role-select:focus {
+          border-color: var(--primary);
+        }
+        .invite-btn {
+          white-space: nowrap;
+          padding: 9px 20px;
+          font-size: 12px;
+        }
+
+        @media (max-width: 640px) {
+          .invite-input-row {
+            flex-direction: column;
+          }
+          .invite-email-input,
+          .invite-role-select,
+          .invite-btn {
+            width: 100%;
+          }
         }
 
         /* PREMIUM FLOATING AI ASSISTANT CHAT PANEL (Linear style minimized/maximized) */

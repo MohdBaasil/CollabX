@@ -892,6 +892,225 @@ export const dbService = {
     );
   },
 
+  // --- PROJECT MEMBER MANAGEMENT OPERATIONS ---
+  async addProjectMember(projectId: string, email: string, role: string, invitedByUserId: string) {
+    return runWithFallback(
+      async () => {
+        // Find user by email
+        const targetUser = await prisma.user.findUnique({ where: { email } });
+        if (!targetUser) {
+          throw new Error('USER_NOT_FOUND');
+        }
+
+        // Check if already a member
+        const existing = await prisma.projectMember.findUnique({
+          where: { projectId_userId: { projectId, userId: targetUser.id } }
+        });
+        if (existing) {
+          throw new Error('ALREADY_MEMBER');
+        }
+
+        // Get the project to find workspaceId
+        const project = await prisma.project.findUnique({ where: { id: projectId } });
+        if (!project) {
+          throw new Error('PROJECT_NOT_FOUND');
+        }
+
+        // Also add user to the workspace if not already a member
+        const existingWsMember = await prisma.workspaceMember.findUnique({
+          where: { workspaceId_userId: { workspaceId: project.workspaceId, userId: targetUser.id } }
+        });
+        if (!existingWsMember) {
+          await prisma.workspaceMember.create({
+            data: {
+              workspaceId: project.workspaceId,
+              userId: targetUser.id,
+              role: 'member',
+            }
+          });
+        }
+
+        // Add to project
+        const member = await prisma.projectMember.create({
+          data: {
+            projectId,
+            userId: targetUser.id,
+            role: role || 'editor',
+          },
+          include: {
+            user: {
+              select: { id: true, email: true, name: true, avatarUrl: true }
+            }
+          }
+        });
+
+        await this.logActivity(projectId, invitedByUserId, 'create', 'member', null, targetUser.email);
+
+        return {
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          user: member.user,
+        };
+      },
+      () => {
+        // Mock fallback
+        const targetUser = mockDb.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+        if (!targetUser) {
+          throw new Error('USER_NOT_FOUND');
+        }
+
+        const existing = mockDb.projectMembers.find(
+          (pm) => pm.projectId === projectId && pm.userId === targetUser.id
+        );
+        if (existing) {
+          throw new Error('ALREADY_MEMBER');
+        }
+
+        const project = mockDb.projects.find((p) => p.id === projectId);
+        if (!project) {
+          throw new Error('PROJECT_NOT_FOUND');
+        }
+
+        // Add to workspace if not already
+        const existingWs = mockDb.workspaceMembers.find(
+          (wm) => wm.workspaceId === project.workspaceId && wm.userId === targetUser.id
+        );
+        if (!existingWs) {
+          mockDb.workspaceMembers.push({
+            id: Math.random().toString(36).substring(2, 9),
+            workspaceId: project.workspaceId,
+            userId: targetUser.id,
+            role: 'member',
+            createdAt: new Date(),
+          });
+        }
+
+        const newMember = {
+          id: Math.random().toString(36).substring(2, 9),
+          projectId,
+          userId: targetUser.id,
+          role: role || 'editor',
+          createdAt: new Date(),
+        };
+        mockDb.projectMembers.push(newMember);
+
+        this.logActivity(projectId, invitedByUserId, 'create', 'member', null, targetUser.email);
+
+        return {
+          id: newMember.id,
+          userId: newMember.userId,
+          role: newMember.role,
+          user: { id: targetUser.id, email: targetUser.email, name: targetUser.name, avatarUrl: targetUser.avatarUrl },
+        };
+      }
+    );
+  },
+
+  async removeProjectMember(projectId: string, memberUserId: string, removedByUserId: string) {
+    return runWithFallback(
+      async () => {
+        const member = await prisma.projectMember.findUnique({
+          where: { projectId_userId: { projectId, userId: memberUserId } },
+          include: { user: { select: { email: true } } }
+        });
+        if (!member) {
+          throw new Error('MEMBER_NOT_FOUND');
+        }
+        if (member.role === 'owner') {
+          throw new Error('CANNOT_REMOVE_OWNER');
+        }
+
+        await prisma.projectMember.delete({
+          where: { projectId_userId: { projectId, userId: memberUserId } }
+        });
+
+        await this.logActivity(projectId, removedByUserId, 'delete', 'member', member.user.email, null);
+
+        return { success: true };
+      },
+      () => {
+        const idx = mockDb.projectMembers.findIndex(
+          (pm) => pm.projectId === projectId && pm.userId === memberUserId
+        );
+        if (idx === -1) {
+          throw new Error('MEMBER_NOT_FOUND');
+        }
+        if (mockDb.projectMembers[idx].role === 'owner') {
+          throw new Error('CANNOT_REMOVE_OWNER');
+        }
+
+        const targetUser = mockDb.users.find((u) => u.id === memberUserId);
+        mockDb.projectMembers.splice(idx, 1);
+
+        this.logActivity(projectId, removedByUserId, 'delete', 'member', targetUser?.email || memberUserId, null);
+
+        return { success: true };
+      }
+    );
+  },
+
+  async updateProjectMemberRole(projectId: string, memberUserId: string, newRole: string, updatedByUserId: string) {
+    return runWithFallback(
+      async () => {
+        const member = await prisma.projectMember.findUnique({
+          where: { projectId_userId: { projectId, userId: memberUserId } }
+        });
+        if (!member) {
+          throw new Error('MEMBER_NOT_FOUND');
+        }
+        if (member.role === 'owner') {
+          throw new Error('CANNOT_CHANGE_OWNER_ROLE');
+        }
+
+        const updated = await prisma.projectMember.update({
+          where: { projectId_userId: { projectId, userId: memberUserId } },
+          data: { role: newRole },
+          include: {
+            user: {
+              select: { id: true, email: true, name: true, avatarUrl: true }
+            }
+          }
+        });
+
+        await this.logActivity(projectId, updatedByUserId, 'update', 'member-role', member.role, newRole);
+
+        return {
+          id: updated.id,
+          userId: updated.userId,
+          role: updated.role,
+          user: updated.user,
+        };
+      },
+      () => {
+        const member = mockDb.projectMembers.find(
+          (pm) => pm.projectId === projectId && pm.userId === memberUserId
+        );
+        if (!member) {
+          throw new Error('MEMBER_NOT_FOUND');
+        }
+        if (member.role === 'owner') {
+          throw new Error('CANNOT_CHANGE_OWNER_ROLE');
+        }
+
+        const oldRole = member.role;
+        member.role = newRole;
+
+        const targetUser = mockDb.users.find((u) => u.id === memberUserId);
+        this.logActivity(projectId, updatedByUserId, 'update', 'member-role', oldRole, newRole);
+
+        return {
+          id: member.id,
+          userId: member.userId,
+          role: member.role,
+          user: targetUser
+            ? { id: targetUser.id, email: targetUser.email, name: targetUser.name, avatarUrl: targetUser.avatarUrl }
+            : null,
+        };
+      }
+    );
+  },
+
   // --- TASK MANAGEMENT OPERATIONS ---
   async getProjectTasks(projectId: string, userId: string) {
     return runWithFallback(
